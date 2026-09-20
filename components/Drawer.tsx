@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Home, Heart, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
@@ -15,13 +16,24 @@ const NAV_ITEMS = [
 ];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter();
   const { isAnonymous, email, role } = useSessionInfo();
 
   if (!open) return null;
 
   async function handleLogout() {
+    // Captured before signOut() — role resets to null once the session
+    // is gone, which would make every logout look non-admin by the time
+    // we decide where to send them.
+    const wasAdmin = role != null;
     await createClient().auth.signOut();
     onClose();
+    // Only an admin gets bounced to /login — it's a password-only page
+    // with nothing a plain viewer could do there, so sending them there
+    // too would just be a dead end (and re-expose "admin access" as a
+    // concept to someone who saved their wishlist via email, which is
+    // exactly what keeping this page unlinked was meant to avoid).
+    if (wasAdmin) router.push("/login");
   }
 
   return (
