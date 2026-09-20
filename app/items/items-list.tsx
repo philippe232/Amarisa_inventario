@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ItemChip from "@/components/ItemChip";
+import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
+import Pill from "@/components/Pill";
+import { normalizeSearch } from "@/lib/normalize-search";
 import type { Item, ItemListRow } from "@/lib/types";
 
 type ItemRowFromQuery = Item & {
@@ -15,6 +18,33 @@ export default function ItemsList() {
   const [items, setItems] = useState<ItemListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  // Multi-select per facet (OR within área, OR within tipo), AND across
+  // the two — same model as Cereza's Tipo/Cuenta/Proveedor filter
+  // (gastos-list.tsx). Options are derived from whatever's actually in
+  // the data below, not hardcoded — área/tipo are free-text columns on
+  // purpose, so a new value never needs a matching code change here.
+  const [areaFiltro, setAreaFiltro] = useState<Set<string>>(new Set());
+  const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
+
+  function toggleArea(area: string) {
+    setAreaFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(area)) next.delete(area);
+      else next.add(area);
+      return next;
+    });
+  }
+
+  function toggleType(type: string) {
+    setTypeFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
 
   // Deliberately a plain fetch-on-mount, no cache layer (unlike Cereza's
   // gastos-list.tsx, which adds a localStorage snapshot purely to avoid a
@@ -82,15 +112,110 @@ export default function ItemsList() {
     };
   }, [supabase]);
 
-  if (loading) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
-  if (error) return <p className="p-4 text-sm text-red-600">Error: {error}</p>;
-  if (items.length === 0) return <p className="p-4 text-sm text-ink-soft">Sin artículos.</p>;
+  const areaOptions = useMemo(
+    () => Array.from(new Set(items.map((i) => i.area).filter((a): a is string => !!a))).sort(),
+    [items],
+  );
+  const typeOptions = useMemo(
+    () => Array.from(new Set(items.map((i) => i.type).filter((t): t is string => !!t))).sort(),
+    [items],
+  );
+
+  // Client-side filter, no database round-trip — the whole catalog is
+  // ~55 rows, same reasoning cuentas-por-pagar-list.tsx gives for its
+  // own client-side search.
+  const filteredItems = useMemo(() => {
+    let result = items;
+    if (search.trim()) {
+      const term = normalizeSearch(search.trim());
+      result = result.filter(
+        (i) => normalizeSearch(i.name).includes(term) || (i.description && normalizeSearch(i.description).includes(term)),
+      );
+    }
+    if (areaFiltro.size > 0) result = result.filter((i) => i.area && areaFiltro.has(i.area));
+    if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
+    return result;
+  }, [items, search, areaFiltro, typeFiltro]);
+
+  const chips: FilterChip[] = [
+    ...Array.from(areaFiltro).map((a) => ({ id: `area:${a}`, label: a })),
+    ...Array.from(typeFiltro).map((t) => ({ id: `type:${t}`, label: t })),
+  ];
+
+  function handleRemoveChip(id: string) {
+    const sep = id.indexOf(":");
+    const kind = id.slice(0, sep);
+    const value = id.slice(sep + 1);
+    if (kind === "area") toggleArea(value);
+    else if (kind === "type") toggleType(value);
+  }
+
+  const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0;
 
   return (
-    <div className="px-3.5 py-3">
-      {items.map((item) => (
-        <ItemChip key={item.id} item={item} href={`/items/${item.id}`} />
-      ))}
-    </div>
+    <>
+      <SearchFilterBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Buscar artículo"
+        chips={chips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={
+          hasActiveFilters
+            ? () => {
+                setSearch("");
+                setAreaFiltro(new Set());
+                setTypeFiltro(new Set());
+              }
+            : undefined
+        }
+        sheetTitle="Filtrar"
+        sheetContent={
+          <div className="space-y-5">
+            {areaOptions.length > 0 && (
+              <div>
+                <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Área</span>
+                <div className="flex flex-wrap gap-2">
+                  {areaOptions.map((area) => (
+                    <Pill key={area} active={areaFiltro.has(area)} onClick={() => toggleArea(area)}>
+                      {area}
+                    </Pill>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {typeOptions.length > 0 && (
+              <div>
+                <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Tipo</span>
+                <div className="flex flex-wrap gap-2">
+                  {typeOptions.map((type) => (
+                    <Pill key={type} active={typeFiltro.has(type)} onClick={() => toggleType(type)}>
+                      {type}
+                    </Pill>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        }
+      />
+
+      {loading ? (
+        <p className="p-4 text-sm text-ink-soft">Cargando...</p>
+      ) : error ? (
+        <p className="p-4 text-sm text-red-600">Error: {error}</p>
+      ) : items.length === 0 ? (
+        <p className="p-4 text-sm text-ink-soft">Sin artículos.</p>
+      ) : filteredItems.length === 0 ? (
+        <p className="p-4 text-sm text-ink-soft">Sin resultados.</p>
+      ) : (
+        <div className="px-3.5 py-3">
+          {filteredItems.map((item) => (
+            <ItemChip key={item.id} item={item} href={`/items/${item.id}`} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
