@@ -13,6 +13,7 @@
 
   /* Ported from Cereza's neutral palette (reference/cereza/app/globals.css)
      to keep list-row styling visually consistent across both apps. */
+  --color-page: #eef1f5;
   --color-card: #ffffff;
   --color-ink: #0f172a;
   --color-ink-soft: #6b7280;
