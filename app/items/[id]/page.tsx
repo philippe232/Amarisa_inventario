@@ -1,0 +1,59 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { formatCurrency } from "@/lib/currency";
+import { getDisplayName } from "@/lib/items";
+import type { Item } from "@/lib/types";
+
+// Minimal stub — just enough to prove the list screen refetches (fresh
+// bidder count included) when navigated back to. Not the real detail
+// screen design.
+export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const supabase = createClient();
+
+  const [item, setItem] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase.from("items").select("*").eq("id", id).single();
+      if (cancelled) return;
+      if (error) {
+        setError(error.message);
+      } else {
+        setItem(data as Item);
+        setError(null);
+      }
+      setLoading(false);
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, id]);
+
+  return (
+    <div className="min-h-screen bg-white px-3.5 py-4">
+      <Link href="/items" className="text-sm text-ink-soft">
+        ← Volver
+      </Link>
+
+      {loading && <p className="mt-4 text-sm text-ink-soft">Cargando...</p>}
+      {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
+      {item && (
+        <div className="mt-4">
+          <h1 className="text-xl font-bold text-ink">{getDisplayName(item)}</h1>
+          <p className="mt-1 text-[15px] font-bold text-ink">
+            {item.suggested_resale_price != null ? formatCurrency(item.suggested_resale_price) : "Sin precio"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
