@@ -7,7 +7,6 @@ import type { Item, ItemListRow } from "@/lib/types";
 
 type ItemRowFromQuery = Item & {
   item_photos: { url: string }[] | null;
-  wishlist_items: { count: number }[] | null;
 };
 
 export default function ItemsList() {
@@ -24,8 +23,7 @@ export default function ItemsList() {
   // happens automatically on every "back" navigation from the detail
   // screen, since the App Router unmounts a client page's component tree
   // on route change rather than keeping it alive in the background. That
-  // means the bidder count (wishlist_items count, computed here at query
-  // time, never a stored column) can't go stale on return.
+  // means the bidder count can't go stale on return.
   //
   // `load` is declared inside the effect (not a useCallback called by
   // reference) — same fix Cereza's own gastos-list.tsx/cierres-list.tsx
@@ -37,31 +35,40 @@ export default function ItemsList() {
     async function load() {
       setLoading(true);
       // item_photos ordered by sort_order so [0] is always the primary
-      // photo; wishlist_items(count) is a PostgREST embedded aggregate —
-      // it can't drift from the real wishlist_items rows the way a stored
-      // counter column could.
-      const { data, error } = await supabase
-        .from("items")
-        .select("*, item_photos(url), wishlist_items(count)")
-        .order("sort_order", { referencedTable: "item_photos" })
-        .order("created_at", { ascending: false });
+      // photo. Bidder count comes from item_wishlist_counts (a separate
+      // query, not an embedded wishlist_items(count)) — 0003 locked
+      // wishlist_items itself down to each user's own rows, so a public
+      // per-item count has to come from the aggregate view instead.
+      const [itemsRes, countsRes] = await Promise.all([
+        supabase
+          .from("items")
+          .select("*, item_photos(url)")
+          .order("sort_order", { referencedTable: "item_photos" })
+          .order("created_at", { ascending: false }),
+        supabase.from("item_wishlist_counts").select("item_id, bidder_count"),
+      ]);
 
       if (cancelled) return;
 
-      if (error) {
-        setError(error.message);
+      if (itemsRes.error) {
+        setError(itemsRes.error.message);
         setLoading(false);
         return;
       }
+      // A failed counts fetch shouldn't block the whole list from
+      // showing — worst case every row just shows 0 interesados.
+      const countByItemId = new Map<string, number>(
+        (countsRes.data ?? []).map((row) => [row.item_id as string, row.bidder_count as number]),
+      );
 
-      const rows = (data ?? []) as unknown as ItemRowFromQuery[];
+      const rows = (itemsRes.data ?? []) as unknown as ItemRowFromQuery[];
       setItems(
         rows.map((row) => {
-          const { item_photos, wishlist_items, ...item } = row;
+          const { item_photos, ...item } = row;
           return {
             ...item,
             primaryPhotoUrl: item_photos?.[0]?.url ?? null,
-            bidderCount: wishlist_items?.[0]?.count ?? 0,
+            bidderCount: countByItemId.get(item.id) ?? 0,
           };
         }),
       );

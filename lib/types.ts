@@ -1,5 +1,6 @@
-// Mirrors db/migrations/0001_init_schema.sql — keep in sync by hand,
-// there's no generated-types step in this project yet.
+// Mirrors db/migrations/0001_init_schema.sql (plus 0003's additions to
+// wishlist_items) — keep in sync by hand, there's no generated-types
+// step in this project yet.
 
 export type ItemStatus = "for_sale" | "reserved" | "sold";
 
@@ -48,8 +49,20 @@ export type ItemLink = {
 // that only exist as query-time computations (never stored columns).
 export type ItemListRow = Item & {
   primaryPhotoUrl: string | null;
-  // Count of wishlist_items rows for this item — e.g. via PostgREST's
-  // embedded count (`.select("*, wishlist_items(count)")`) so it can
-  // never drift out of sync with a stored counter.
+  // Count of wishlist_items rows for this item, from the
+  // item_wishlist_counts view (0003_wishlist_bids_and_ownership.sql) —
+  // the base table's own RLS restricts it to each user's own rows, so
+  // the public-facing count has to come from a view that aggregates
+  // across everyone instead of an embedded per-row count.
   bidderCount: number;
+};
+
+export type WishlistItem = {
+  id: string;
+  user_id: string;
+  item_id: string;
+  contact_id: string | null;
+  bid_amount: number | null;
+  reviewed: boolean;
+  created_at: string;
 };
