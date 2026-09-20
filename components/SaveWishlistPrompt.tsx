@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { useSessionInfo } from "@/lib/auth";
+import { sendMagicLink, useSessionInfo } from "@/lib/auth";
 
 // Lets a viewer optionally attach their email to their existing
 // (invisible, anonymous) session, purely so their wishlist survives a
@@ -41,7 +40,6 @@ function getServerDismissedSnapshot() {
 }
 
 export default function SaveWishlistPrompt() {
-  const supabase = createClient();
   const { loading, isAnonymous, email } = useSessionInfo();
   const [inputEmail, setInputEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -76,22 +74,13 @@ export default function SaveWishlistPrompt() {
     e.preventDefault();
     setStatus("sending");
     setError(null);
-
-    const emailRedirectTo = `${window.location.origin}/wishlist`;
-    const { error: linkError } = await supabase.auth.updateUser({ email: inputEmail }, { emailRedirectTo });
-
-    if (linkError) {
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: inputEmail,
-        options: { emailRedirectTo },
-      });
-      if (otpError) {
-        setError(otpError.message);
-        setStatus("error");
-        return;
-      }
+    try {
+      await sendMagicLink(inputEmail, `${window.location.origin}/wishlist`);
+      setStatus("sent");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo enviar el enlace.");
+      setStatus("error");
     }
-    setStatus("sent");
   }
 
   return (

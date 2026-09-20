@@ -56,3 +56,20 @@ export function useSessionInfo(): SessionInfo {
 
   return state;
 }
+
+// Shared by SaveWishlistPrompt and the unified /login screen — tries
+// updateUser() first (called on whatever anonymous session the caller
+// already has, so it LINKS this email to that session's existing
+// user_id rather than creating a disconnected one, preserving any
+// wishlist_items already under it), falling back to signInWithOtp (a
+// plain sign-in to a pre-existing account) only when that email is
+// already registered — e.g. recovering a previously-saved list on a
+// new device, where there's nothing local worth preserving anyway.
+export async function sendMagicLink(email: string, emailRedirectTo: string): Promise<void> {
+  const supabase = createClient();
+  const { error: linkError } = await supabase.auth.updateUser({ email }, { emailRedirectTo });
+  if (linkError) {
+    const { error: otpError } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo } });
+    if (otpError) throw otpError;
+  }
+}

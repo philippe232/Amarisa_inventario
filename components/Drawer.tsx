@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Heart, LogOut } from "lucide-react";
+import { Home, Heart, LogOut, LogIn } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 
@@ -22,18 +22,11 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
   if (!open) return null;
 
   async function handleLogout() {
-    // Captured before signOut() — role resets to null once the session
-    // is gone, which would make every logout look non-admin by the time
-    // we decide where to send them.
-    const wasAdmin = role != null;
     await createClient().auth.signOut();
     onClose();
-    // Only an admin gets bounced to /login — it's a password-only page
-    // with nothing a plain viewer could do there, so sending them there
-    // too would just be a dead end (and re-expose "admin access" as a
-    // concept to someone who saved their wishlist via email, which is
-    // exactly what keeping this page unlinked was meant to avoid).
-    if (wasAdmin) router.push("/login");
+    // /login always has a "Continuar como invitado" way out now, so
+    // this is never a dead end regardless of who was signed in.
+    router.push("/login");
   }
 
   return (
@@ -57,28 +50,37 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
           ))}
         </nav>
 
-        {/* No public login entry point here — signing in only happens
-            contextually, from the "save my list" prompt on /wishlist
-            (SaveWishlistPrompt), never framed as "admin access." This
-            footer only ever shows state for a session that's already
-            real (linked/signed in), whether or not that email happens
-            to be an admin; a plain anonymous visitor sees nothing here
-            at all. */}
-        {!isAnonymous && (
-          <div className="border-t border-line p-3">
-            <p className="truncate px-3 text-xs text-ink-soft">
-              {role ? `Sesión: ${role === "owner" ? "Dueño" : "Editor"}` : `Lista guardada: ${email}`}
-            </p>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left text-sm text-ink hover:bg-page"
+        {/* Always one of the two states — a signed-in identity (email,
+            role tag if applicable) + Cerrar sesión, or an Iniciar
+            sesión link. Never blank, unlike the earlier version that
+            hid this entirely for anonymous visitors. */}
+        <div className="border-t border-line p-3">
+          {isAnonymous ? (
+            <Link
+              href="/login"
+              onClick={onClose}
+              className="flex min-h-11 items-center gap-3 rounded-md px-3 py-1.5 text-sm text-ink hover:bg-page"
             >
-              <LogOut className="h-4 w-4 shrink-0 text-ink-soft" aria-hidden="true" />
-              Cerrar sesión
-            </button>
-          </div>
-        )}
+              <LogIn className="h-4 w-4 shrink-0 text-ink-soft" aria-hidden="true" />
+              Iniciar sesión
+            </Link>
+          ) : (
+            <>
+              <p className="truncate px-3 text-xs text-ink-soft">
+                {email}
+                {role && <> · {role === "owner" ? "Dueño" : "Editor"}</>}
+              </p>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left text-sm text-ink hover:bg-page"
+              >
+                <LogOut className="h-4 w-4 shrink-0 text-ink-soft" aria-hidden="true" />
+                Cerrar sesión
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <button type="button" aria-label="Cerrar menú" onClick={onClose} className="flex-1 bg-black/30" />
     </div>
