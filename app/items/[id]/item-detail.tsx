@@ -99,13 +99,26 @@ export default function ItemDetail({ id }: { id: string }) {
         if (error) throw error;
         setWishlistRowId(null);
       } else {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .from("wishlist_items")
           .upsert({ user_id: userId, item_id: id }, { onConflict: "user_id,item_id" })
           .select("id")
           .single();
-        if (error) throw error;
-        setWishlistRowId(data.id);
+        if (error) {
+          // The cached session can look locally valid (getSession()
+          // returns it) while its underlying auth.users row is gone —
+          // this insert then fails on the foreign key, not on auth.
+          // Rather than surface that as a dead end, start a fresh
+          // anonymous session and retry once before giving up.
+          const freshUserId = await ensureAnonymousSession(true);
+          ({ data, error } = await supabase
+            .from("wishlist_items")
+            .upsert({ user_id: freshUserId, item_id: id }, { onConflict: "user_id,item_id" })
+            .select("id")
+            .single());
+          if (error || !data) throw error ?? new Error("No se pudo actualizar tu lista.");
+        }
+        setWishlistRowId(data!.id);
       }
     } catch (err) {
       setWishlistError(err instanceof Error ? err.message : "No se pudo actualizar tu lista.");
