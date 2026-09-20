@@ -14,7 +14,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col">
       <TopBar onMenuClick={() => setDrawerOpen(true)} />
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
-      <main className="flex flex-1 flex-col">{children}</main>
+      {/* bg-white here, not just per-page — found live: item-detail.tsx
+          and the edit form had no background of their own, so they fell
+          through to body's --background variable, which flips dark
+          under prefers-color-scheme even though nothing in this app
+          implements real dark-mode theming. One fix here covers every
+          current and future page, rather than each page remembering its
+          own bg-white. */}
+      <main className="flex flex-1 flex-col bg-white">{children}</main>
     </div>
   );
 }

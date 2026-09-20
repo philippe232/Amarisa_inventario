@@ -20,6 +20,9 @@
   --color-ink-faint: #9aa1ac;
   --color-line: #e2e5eb;
   --color-line-strong: #d7dbe3;
+  --color-positive: #1fa15a;
+  --color-negative: #e0463f;
+  --color-neutral: #6f7684;
 }
 
 @media (prefers-color-scheme: dark) {
