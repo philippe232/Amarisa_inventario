@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { useAdminRole } from "@/lib/auth";
+import { useSessionInfo } from "@/lib/auth";
 import PhotoManager from "@/components/PhotoManager";
 import type { Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
 
@@ -101,7 +101,7 @@ function numOrNull(s: string): number | null {
 export default function ItemEditForm({ id }: { id: string }) {
   const supabase = createClient();
   const router = useRouter();
-  const { role, loading: roleLoading } = useAdminRole();
+  const { role, loading: roleLoading } = useSessionInfo();
 
   const [item, setItem] = useState<Item | null>(null);
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Pencil, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
-import { useAdminRole } from "@/lib/auth";
+import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
@@ -28,7 +28,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 
 export default function ItemDetail({ id }: { id: string }) {
   const supabase = createClient();
-  const { role } = useAdminRole();
+  const { role } = useSessionInfo();
 
   const [item, setItem] = useState<Item | null>(null);
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);

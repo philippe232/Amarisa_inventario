@@ -3,19 +3,24 @@ import { createClient } from "@/lib/supabase/client";
 
 export type AdminRole = "owner" | "editor" | null;
 
-// Calls the my_admin_role() RPC (0004_admin_roles_and_photo_uploads.sql)
-// rather than querying the admins table directly — that table has zero
-// read policies, by design, so this SECURITY DEFINER function is the
-// only sanctioned way to learn whether the current session's verified
-// email is on the list. Returns null for every non-admin session,
-// including every anonymous one (their JWT has no email claim at all).
-//
-// UI-only signal: actual enforcement is RLS (is_admin()) on the tables
-// themselves, so this hook returning the wrong thing for a moment
-// during load can never let a write through it shouldn't.
-export function useAdminRole(): { role: AdminRole; loading: boolean } {
-  const [role, setRole] = useState<AdminRole>(null);
-  const [loading, setLoading] = useState(true);
+export type SessionInfo = {
+  loading: boolean;
+  // True for the invisible per-visitor session everyone gets automatically
+  // (see ensureAnonymousSession) — false once they've linked or signed in
+  // with a real email, whether or not that email is an admin.
+  isAnonymous: boolean;
+  email: string | null;
+  role: AdminRole;
+};
+
+// Single source of truth for "who is this session" — used by the wishlist
+// save prompt (isAnonymous/email) and by the item screens (role). Calls
+// the my_admin_role() RPC rather than querying the admins table directly
+// — that table has zero read policies, by design, so this SECURITY
+// DEFINER function is the only sanctioned way to learn whether the
+// current session's verified email is on the list.
+export function useSessionInfo(): SessionInfo {
+  const [state, setState] = useState<SessionInfo>({ loading: true, isAnonymous: true, email: null, role: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -26,15 +31,15 @@ export function useAdminRole(): { role: AdminRole; loading: boolean } {
         data: { session },
       } = await supabase.auth.getSession();
       if (cancelled) return;
+
       if (!session || session.user.is_anonymous) {
-        setRole(null);
-        setLoading(false);
+        setState({ loading: false, isAnonymous: true, email: null, role: null });
         return;
       }
+
       const { data } = await supabase.rpc("my_admin_role");
       if (cancelled) return;
-      setRole((data as AdminRole) ?? null);
-      setLoading(false);
+      setState({ loading: false, isAnonymous: false, email: session.user.email ?? null, role: (data as AdminRole) ?? null });
     }
 
     check();
@@ -49,5 +54,5 @@ export function useAdminRole(): { role: AdminRole; loading: boolean } {
     };
   }, []);
 
-  return { role, loading };
+  return state;
 }
