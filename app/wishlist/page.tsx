@@ -1,6 +1,10 @@
 import Link from "next/link";
 import WishlistList from "./wishlist-list";
 
+// Same reasoning as app/items/page.tsx — entirely client-fetched, must
+// never be statically prerendered.
+export const dynamic = "force-dynamic";
+
 export default function WishlistPage() {
   return (
     <div className="min-h-screen bg-white">
