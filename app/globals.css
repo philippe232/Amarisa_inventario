@@ -10,6 +10,15 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Ported from Cereza's neutral palette (reference/cereza/app/globals.css)
+     to keep list-row styling visually consistent across both apps. */
+  --color-card: #ffffff;
+  --color-ink: #0f172a;
+  --color-ink-soft: #6b7280;
+  --color-ink-faint: #9aa1ac;
+  --color-line: #e2e5eb;
+  --color-line-strong: #d7dbe3;
 }
 
 @media (prefers-color-scheme: dark) {

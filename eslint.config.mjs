@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Read-only reference symlink (reference/cereza) — a separate
+    // project with its own conventions/deps, never linted as part of
+    // this one.
+    "reference/**",
   ]),
 ]);
 
