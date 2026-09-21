@@ -7,9 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
-import { getDisplayName } from "@/lib/items";
+import { formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import StatusBadge from "@/components/StatusBadge";
+import ConditionBadge from "@/components/ConditionBadge";
 import type { Item, ItemLink, ItemPhoto } from "@/lib/types";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -46,7 +47,11 @@ export default function ItemDetail({ id }: { id: string }) {
     async function load() {
       setLoading(true);
       const [itemRes, photosRes, linksRes] = await Promise.all([
-        supabase.from("items").select("*").eq("id", id).single(),
+        // items_public (db/migrations/0006), not items directly — it
+        // masks suggested_resale_price/asking_price_override to null
+        // for anyone who isn't Editor/Owner, at the query level, not
+        // just by hiding it in this component.
+        supabase.from("items_public").select("*").eq("id", id).single(),
         supabase.from("item_photos").select("*").eq("item_id", id).order("sort_order"),
         supabase.from("item_links").select("*").eq("item_id", id).order("created_at"),
       ]);
@@ -160,10 +165,10 @@ export default function ItemDetail({ id }: { id: string }) {
         <SectionHeading>Precio</SectionHeading>
         <div className="flex items-baseline gap-2">
           <p className="text-2xl font-bold text-ink">
-            {item.suggested_resale_price != null ? formatCurrency(item.suggested_resale_price) : "Sin precio"}
+            {item.asking_price != null ? formatCurrency(item.asking_price) : "Sin precio"}
           </p>
-          {item.price_new != null && (
-            <p className="text-sm text-ink-faint line-through">{formatCurrency(item.price_new)}</p>
+          {item.purchase_price != null && (
+            <p className="text-sm text-ink-faint line-through">{formatCurrency(item.purchase_price)}</p>
           )}
           {item.discount_pct != null && (
             <span className="rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-xs font-bold text-positive">
@@ -172,31 +177,40 @@ export default function ItemDetail({ id }: { id: string }) {
           )}
         </div>
         <div className="grid grid-cols-2 gap-3 pt-1">
-          <Field label="Precio de compra" value={item.purchase_price != null ? formatCurrency(item.purchase_price) : null} />
+          <Field label="Precio de compra original" value={item.purchase_price != null ? formatCurrency(item.purchase_price) : null} />
           <Field label="Factura" value={item.has_factura == null ? null : item.has_factura ? "Sí" : "No"} />
+          {/* Only ever populated for an Editor/Owner session — items_public
+              nulls it out server-side for everyone else. */}
+          <Field label="Precio sugerido (investigación)" value={item.suggested_resale_price != null ? formatCurrency(item.suggested_resale_price) : null} />
         </div>
       </div>
 
-      {/* 3. Identity */}
-      {(item.brand || item.model || item.area || item.type || item.years_in_use != null || item.condition_pct != null) && (
+      {/* 3. Description */}
+      {(item.brand || item.model || item.serial_number || item.area || item.type || item.quantity > 1 || formatDimensions(item) || item.description) && (
         <div className="mt-5 space-y-3 border-t border-line px-3.5 pt-4">
-          <SectionHeading>Datos del artículo</SectionHeading>
+          <SectionHeading>Descripción</SectionHeading>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Marca" value={item.brand} />
             <Field label="Modelo" value={item.model} />
+            <Field label="No. de serie" value={item.serial_number} />
             <Field label="Área" value={item.area} />
             <Field label="Tipo" value={item.type} />
-            <Field label="Años de uso" value={item.years_in_use != null ? `${item.years_in_use}` : null} />
-            <Field label="Condición" value={item.condition_pct != null ? `${item.condition_pct}%` : null} />
+            <Field label="Cantidad disponible" value={item.quantity > 1 ? item.quantity : null} />
+            <Field label="Dimensiones" value={formatDimensions(item)} />
           </div>
+          {item.description && <p className="text-sm whitespace-pre-wrap text-ink">{item.description}</p>}
         </div>
       )}
 
-      {/* 4. History */}
-      {item.maintenance_notes && (
-        <div className="mt-5 space-y-2 border-t border-line px-3.5 pt-4">
-          <SectionHeading>Historial de mantenimiento</SectionHeading>
-          <p className="text-sm whitespace-pre-wrap text-ink">{item.maintenance_notes}</p>
+      {/* 4. Condition */}
+      {(item.condition_rating || item.years_in_use != null || item.condition_notes) && (
+        <div className="mt-5 space-y-3 border-t border-line px-3.5 pt-4">
+          <SectionHeading>Estado del artículo</SectionHeading>
+          <div className="flex flex-wrap items-center gap-3">
+            {item.condition_rating && <ConditionBadge rating={item.condition_rating} />}
+            {item.years_in_use != null && <span className="text-sm text-ink-soft">{item.years_in_use} años de uso</span>}
+          </div>
+          {item.condition_notes && <p className="text-sm whitespace-pre-wrap text-ink">{item.condition_notes}</p>}
         </div>
       )}
 

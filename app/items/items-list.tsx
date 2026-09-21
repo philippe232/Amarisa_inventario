@@ -71,7 +71,10 @@ export default function ItemsList() {
       // per-item count has to come from the aggregate view instead.
       const [itemsRes, countsRes] = await Promise.all([
         supabase
-          .from("items")
+          // items_public (db/migrations/0006), not items — masks
+          // suggested_resale_price/asking_price_override to null for
+          // anyone who isn't Editor/Owner, at the query level.
+          .from("items_public")
           .select("*, item_photos(url)")
           .order("sort_order", { referencedTable: "item_photos" })
           .order("created_at", { ascending: false }),

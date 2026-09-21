@@ -23,6 +23,9 @@
   --color-positive: #1fa15a;
   --color-negative: #e0463f;
   --color-neutral: #6f7684;
+  /* Amber, one notch below positive — used only by ConditionBadge's
+     "needs_maintenance" tier, no equivalent in Cereza's palette. */
+  --color-caution: #d97706;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -52,11 +52,11 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
 
       <div className="shrink-0 text-right">
         <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
-          {item.suggested_resale_price != null ? formatCurrency(item.suggested_resale_price) : "—"}
+          {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
         </p>
-        {item.price_new != null && (
+        {item.purchase_price != null && (
           <p className="mt-0.5 text-[12px] text-ink-faint line-through [font-variant-numeric:tabular-nums]">
-            {formatCurrency(item.price_new)}
+            {formatCurrency(item.purchase_price)}
           </p>
         )}
       </div>

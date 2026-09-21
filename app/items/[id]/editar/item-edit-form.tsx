@@ -6,8 +6,9 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
+import { CONDITION_OPTIONS } from "@/lib/condition";
 import PhotoManager from "@/components/PhotoManager";
-import type { Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
+import type { ConditionRating, Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
   { value: "for_sale", label: "En venta" },
@@ -59,14 +60,16 @@ type FormState = {
   model: string;
   serial_number: string;
   quantity: string;
+  height_cm: string;
+  width_cm: string;
+  length_cm: string;
   years_in_use: string;
-  condition_pct: string;
+  condition_rating: ConditionRating | "";
   condition_notes: string;
-  maintenance_notes: string;
   has_factura: "unknown" | "yes" | "no";
-  price_new: string;
   purchase_price: string;
   suggested_resale_price: string;
+  asking_price_override: string;
   status: ItemStatus;
 };
 
@@ -81,14 +84,16 @@ function toFormState(item: Item): FormState {
     model: item.model ?? "",
     serial_number: item.serial_number ?? "",
     quantity: String(item.quantity),
+    height_cm: item.height_cm != null ? String(item.height_cm) : "",
+    width_cm: item.width_cm != null ? String(item.width_cm) : "",
+    length_cm: item.length_cm != null ? String(item.length_cm) : "",
     years_in_use: item.years_in_use != null ? String(item.years_in_use) : "",
-    condition_pct: item.condition_pct != null ? String(item.condition_pct) : "",
+    condition_rating: item.condition_rating ?? "",
     condition_notes: item.condition_notes ?? "",
-    maintenance_notes: item.maintenance_notes ?? "",
     has_factura: item.has_factura == null ? "unknown" : item.has_factura ? "yes" : "no",
-    price_new: item.price_new != null ? String(item.price_new) : "",
     purchase_price: item.purchase_price != null ? String(item.purchase_price) : "",
     suggested_resale_price: item.suggested_resale_price != null ? String(item.suggested_resale_price) : "",
+    asking_price_override: item.asking_price_override != null ? String(item.asking_price_override) : "",
     status: item.status,
   };
 }
@@ -116,6 +121,14 @@ export default function ItemEditForm({ id }: { id: string }) {
   const [linkError, setLinkError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Wait for the role check before fetching anything — this route's
+    // .select("*") returns the unmasked row (suggested_resale_price
+    // included), unlike items_public. Firing it before we know the
+    // visitor is Editor/Owner would ship that figure to the browser's
+    // network tab even though the "no tienes permiso" screen below
+    // never renders it.
+    if (roleLoading || !role) return;
+
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -141,7 +154,7 @@ export default function ItemEditForm({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [supabase, id]);
+  }, [supabase, id, role, roleLoading]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -165,14 +178,16 @@ export default function ItemEditForm({ id }: { id: string }) {
         model: form.model || null,
         serial_number: form.serial_number || null,
         quantity: Number(form.quantity) || 1,
+        height_cm: numOrNull(form.height_cm),
+        width_cm: numOrNull(form.width_cm),
+        length_cm: numOrNull(form.length_cm),
         years_in_use: numOrNull(form.years_in_use),
-        condition_pct: numOrNull(form.condition_pct),
+        condition_rating: form.condition_rating || null,
         condition_notes: form.condition_notes || null,
-        maintenance_notes: form.maintenance_notes || null,
         has_factura: form.has_factura === "unknown" ? null : form.has_factura === "yes",
-        price_new: numOrNull(form.price_new),
         purchase_price: numOrNull(form.purchase_price),
         suggested_resale_price: numOrNull(form.suggested_resale_price),
+        asking_price_override: numOrNull(form.asking_price_override),
         status: form.status,
       })
       .eq("id", id);
@@ -212,11 +227,12 @@ export default function ItemEditForm({ id }: { id: string }) {
     setLinks((prev) => prev.filter((l) => l.id !== linkId));
   }
 
-  if (roleLoading || loading) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
+  if (roleLoading) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
 
   // Client-side gate for UX only — RLS (is_admin()) is what actually
   // stops a non-admin from writing, even if this check were somehow
-  // bypassed.
+  // bypassed. Checked before `loading`: without a role the fetch effect
+  // above never runs, so `loading` would otherwise stay true forever.
   if (!role) {
     return (
       <div className="p-4">
@@ -228,6 +244,7 @@ export default function ItemEditForm({ id }: { id: string }) {
     );
   }
 
+  if (loading) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
   if (error && !form) return <p className="p-4 text-sm text-red-600">Error: {error}</p>;
   if (!item || !form) return null;
 
@@ -248,7 +265,6 @@ export default function ItemEditForm({ id }: { id: string }) {
       <section className="space-y-3">
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Encabezado</h2>
         <LabeledInput label="Nombre" required value={form.name} onChange={(e) => set("name", e.target.value)} />
-        <LabeledTextarea label="Descripción" value={form.description} onChange={(e) => set("description", e.target.value)} />
         <label className="block">
           <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">Estado</span>
           <select
@@ -269,23 +285,7 @@ export default function ItemEditForm({ id }: { id: string }) {
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Precio</h2>
         <div className="grid grid-cols-2 gap-3">
           <LabeledInput
-            label="Precio nuevo"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.price_new}
-            onChange={(e) => set("price_new", e.target.value)}
-          />
-          <LabeledInput
-            label="Precio de venta"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.suggested_resale_price}
-            onChange={(e) => set("suggested_resale_price", e.target.value)}
-          />
-          <LabeledInput
-            label="Precio de compra"
+            label="Precio de compra original"
             type="number"
             step="0.01"
             min="0"
@@ -304,28 +304,102 @@ export default function ItemEditForm({ id }: { id: string }) {
               <option value="no">No</option>
             </select>
           </label>
+          <LabeledInput
+            label="Precio sugerido (investigación)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.suggested_resale_price}
+            onChange={(e) => set("suggested_resale_price", e.target.value)}
+          />
+          <LabeledInput
+            label="Precio de venta (anula el sugerido)"
+            type="number"
+            step="0.01"
+            min="0"
+            value={form.asking_price_override}
+            onChange={(e) => set("asking_price_override", e.target.value)}
+          />
         </div>
-        {item.discount_pct != null && (
-          <p className="text-xs text-ink-soft">Descuento calculado: {item.discount_pct}% (se actualiza solo al guardar precios)</p>
-        )}
+        <p className="text-xs text-ink-soft">
+          {form.asking_price_override
+            ? "Precio al público: el de venta (arriba)."
+            : "Precio al público: el sugerido, hasta que captures uno de venta."}
+          {item.discount_pct != null && ` Descuento vs. compra: ${item.discount_pct}% (se actualiza solo al guardar).`}
+        </p>
+        {/* Precio sugerido/de venta solo las ve Editor/Owner — items_public
+            (0006) los oculta para cualquier otra sesión; esta pantalla ya
+            requiere ese rol para cargar. */}
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Datos del artículo</h2>
+        <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Descripción</h2>
         <div className="grid grid-cols-2 gap-3">
           <LabeledInput label="Marca" value={form.brand} onChange={(e) => set("brand", e.target.value)} />
           <LabeledInput label="Modelo" value={form.model} onChange={(e) => set("model", e.target.value)} />
+          <LabeledInput label="No. de serie" value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} />
           <LabeledInput label="Área" value={form.area} onChange={(e) => set("area", e.target.value)} />
           <LabeledInput label="Tipo" value={form.type} onChange={(e) => set("type", e.target.value)} />
           <LabeledInput label="Ubicación" value={form.location} onChange={(e) => set("location", e.target.value)} />
-          <LabeledInput label="No. de serie" value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} />
           <LabeledInput
-            label="Cantidad"
+            label="Cantidad disponible"
             type="number"
             min="1"
             value={form.quantity}
             onChange={(e) => set("quantity", e.target.value)}
           />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <LabeledInput
+            label="Alto (cm)"
+            type="number"
+            step="0.1"
+            min="0"
+            value={form.height_cm}
+            onChange={(e) => set("height_cm", e.target.value)}
+          />
+          <LabeledInput
+            label="Ancho (cm)"
+            type="number"
+            step="0.1"
+            min="0"
+            value={form.width_cm}
+            onChange={(e) => set("width_cm", e.target.value)}
+          />
+          <LabeledInput
+            label="Largo (cm)"
+            type="number"
+            step="0.1"
+            min="0"
+            value={form.length_cm}
+            onChange={(e) => set("length_cm", e.target.value)}
+          />
+        </div>
+        <LabeledTextarea
+          label="Descripción"
+          value={form.description}
+          onChange={(e) => set("description", e.target.value)}
+        />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Estado del artículo</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">Condición</span>
+            <select
+              value={form.condition_rating}
+              onChange={(e) => set("condition_rating", e.target.value as FormState["condition_rating"])}
+              className="h-11 w-full rounded-md border border-line-strong bg-card px-3 text-sm text-ink"
+            >
+              <option value="">Sin dato</option>
+              {CONDITION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <LabeledInput
             label="Años de uso"
             type="number"
@@ -334,28 +408,11 @@ export default function ItemEditForm({ id }: { id: string }) {
             value={form.years_in_use}
             onChange={(e) => set("years_in_use", e.target.value)}
           />
-          <LabeledInput
-            label="Condición (%)"
-            type="number"
-            min="0"
-            max="100"
-            value={form.condition_pct}
-            onChange={(e) => set("condition_pct", e.target.value)}
-          />
         </div>
         <LabeledTextarea
-          label="Notas de condición"
+          label="Notas de mantenimiento/servicio"
           value={form.condition_notes}
           onChange={(e) => set("condition_notes", e.target.value)}
-        />
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Historial de mantenimiento</h2>
-        <LabeledTextarea
-          label="Notas"
-          value={form.maintenance_notes}
-          onChange={(e) => set("maintenance_notes", e.target.value)}
         />
       </section>
 
