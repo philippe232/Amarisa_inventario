@@ -16,19 +16,32 @@ const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
   { value: "sold", label: "Vendido" },
 ];
 
-function LabeledInput({
-  label,
-  ...props
-}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+// Ported from reference/cereza's gasto-editar-form.tsx row shape (label
+// left, control right, rows sharing one bordered/divided box) — used for
+// every short field (amounts, tags, single values). Free text keeps the
+// separate label-above/box-below LabeledTextarea below instead, per
+// Philippe's split: short data = row, long text = stacked.
+function FieldGroup({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y divide-line rounded-lg border border-line bg-card">{children}</div>;
+}
+
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">{label}</span>
-      <input
-        {...props}
-        className="h-11 w-full rounded-md border border-line-strong bg-card px-3 text-sm text-ink"
-      />
-    </label>
+    <div className="flex items-center justify-between gap-3 px-3 py-3">
+      <span className="text-sm font-medium text-ink">{label}</span>
+      <div className="w-1/2 min-w-0">{children}</div>
+    </div>
   );
+}
+
+const rowInputClass = "w-full rounded-md border border-line-strong bg-card px-3 py-2 text-base text-ink";
+
+function RowInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={rowInputClass} />;
+}
+
+function RowSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={rowInputClass} />;
 }
 
 function LabeledTextarea({
@@ -262,65 +275,75 @@ export default function ItemEditForm({ id }: { id: string }) {
         <PhotoManager itemId={id} photos={photos} onChange={setPhotos} />
       </section>
 
+      {/* Nombre, Cantidad disponible, Estado — the three things every
+          item has regardless of how much else is known about it. */}
       <section className="space-y-3">
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Encabezado</h2>
-        <LabeledInput label="Nombre" required value={form.name} onChange={(e) => set("name", e.target.value)} />
-        <label className="block">
-          <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">Estado</span>
-          <select
-            value={form.status}
-            onChange={(e) => set("status", e.target.value as ItemStatus)}
-            className="h-11 w-full rounded-md border border-line-strong bg-card px-3 text-sm text-ink"
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FieldGroup>
+          <FieldRow label="Nombre">
+            <RowInput required value={form.name} onChange={(e) => set("name", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Cantidad disponible">
+            <RowInput
+              type="number"
+              min="1"
+              value={form.quantity}
+              onChange={(e) => set("quantity", e.target.value)}
+            />
+          </FieldRow>
+          <FieldRow label="Estado">
+            <RowSelect value={form.status} onChange={(e) => set("status", e.target.value as ItemStatus)}>
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </RowSelect>
+          </FieldRow>
+        </FieldGroup>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Precio</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <LabeledInput
-            label="Precio de compra original"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.purchase_price}
-            onChange={(e) => set("purchase_price", e.target.value)}
-          />
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">Factura</span>
-            <select
+        <FieldGroup>
+          <FieldRow label="Precio de compra original">
+            <RowInput
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.purchase_price}
+              onChange={(e) => set("purchase_price", e.target.value)}
+            />
+          </FieldRow>
+          <FieldRow label="Factura">
+            <RowSelect
               value={form.has_factura}
               onChange={(e) => set("has_factura", e.target.value as FormState["has_factura"])}
-              className="h-11 w-full rounded-md border border-line-strong bg-card px-3 text-sm text-ink"
             >
               <option value="unknown">Sin dato</option>
               <option value="yes">Sí</option>
               <option value="no">No</option>
-            </select>
-          </label>
-          <LabeledInput
-            label="Precio sugerido (investigación)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.suggested_resale_price}
-            onChange={(e) => set("suggested_resale_price", e.target.value)}
-          />
-          <LabeledInput
-            label="Precio de venta (anula el sugerido)"
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.asking_price_override}
-            onChange={(e) => set("asking_price_override", e.target.value)}
-          />
-        </div>
+            </RowSelect>
+          </FieldRow>
+          <FieldRow label="Precio sugerido (investigación)">
+            <RowInput
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.suggested_resale_price}
+              onChange={(e) => set("suggested_resale_price", e.target.value)}
+            />
+          </FieldRow>
+          <FieldRow label="Precio de venta (anula el sugerido)">
+            <RowInput
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.asking_price_override}
+              onChange={(e) => set("asking_price_override", e.target.value)}
+            />
+          </FieldRow>
+        </FieldGroup>
         <p className="text-xs text-ink-soft">
           {form.asking_price_override
             ? "Precio al público: el de venta (arriba)."
@@ -334,47 +357,53 @@ export default function ItemEditForm({ id }: { id: string }) {
 
       <section className="space-y-3">
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Descripción</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <LabeledInput label="Marca" value={form.brand} onChange={(e) => set("brand", e.target.value)} />
-          <LabeledInput label="Modelo" value={form.model} onChange={(e) => set("model", e.target.value)} />
-          <LabeledInput label="No. de serie" value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} />
-          <LabeledInput label="Área" value={form.area} onChange={(e) => set("area", e.target.value)} />
-          <LabeledInput label="Tipo" value={form.type} onChange={(e) => set("type", e.target.value)} />
-          <LabeledInput label="Ubicación" value={form.location} onChange={(e) => set("location", e.target.value)} />
-          <LabeledInput
-            label="Cantidad disponible"
-            type="number"
-            min="1"
-            value={form.quantity}
-            onChange={(e) => set("quantity", e.target.value)}
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <LabeledInput
-            label="Alto (cm)"
-            type="number"
-            step="0.1"
-            min="0"
-            value={form.height_cm}
-            onChange={(e) => set("height_cm", e.target.value)}
-          />
-          <LabeledInput
-            label="Ancho (cm)"
-            type="number"
-            step="0.1"
-            min="0"
-            value={form.width_cm}
-            onChange={(e) => set("width_cm", e.target.value)}
-          />
-          <LabeledInput
-            label="Largo (cm)"
-            type="number"
-            step="0.1"
-            min="0"
-            value={form.length_cm}
-            onChange={(e) => set("length_cm", e.target.value)}
-          />
-        </div>
+        <FieldGroup>
+          <FieldRow label="Marca">
+            <RowInput value={form.brand} onChange={(e) => set("brand", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Modelo">
+            <RowInput value={form.model} onChange={(e) => set("model", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="No. de serie">
+            <RowInput value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Área">
+            <RowInput value={form.area} onChange={(e) => set("area", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Tipo">
+            <RowInput value={form.type} onChange={(e) => set("type", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Ubicación">
+            <RowInput value={form.location} onChange={(e) => set("location", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Alto (cm)">
+            <RowInput
+              type="number"
+              step="0.1"
+              min="0"
+              value={form.height_cm}
+              onChange={(e) => set("height_cm", e.target.value)}
+            />
+          </FieldRow>
+          <FieldRow label="Ancho (cm)">
+            <RowInput
+              type="number"
+              step="0.1"
+              min="0"
+              value={form.width_cm}
+              onChange={(e) => set("width_cm", e.target.value)}
+            />
+          </FieldRow>
+          <FieldRow label="Largo (cm)">
+            <RowInput
+              type="number"
+              step="0.1"
+              min="0"
+              value={form.length_cm}
+              onChange={(e) => set("length_cm", e.target.value)}
+            />
+          </FieldRow>
+        </FieldGroup>
         <LabeledTextarea
           label="Descripción"
           value={form.description}
@@ -384,13 +413,11 @@ export default function ItemEditForm({ id }: { id: string }) {
 
       <section className="space-y-3">
         <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Estado del artículo</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold tracking-wide text-ink-soft uppercase">Condición</span>
-            <select
+        <FieldGroup>
+          <FieldRow label="Condición">
+            <RowSelect
               value={form.condition_rating}
               onChange={(e) => set("condition_rating", e.target.value as FormState["condition_rating"])}
-              className="h-11 w-full rounded-md border border-line-strong bg-card px-3 text-sm text-ink"
             >
               <option value="">Sin dato</option>
               {CONDITION_OPTIONS.map((opt) => (
@@ -398,17 +425,18 @@ export default function ItemEditForm({ id }: { id: string }) {
                   {opt.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <LabeledInput
-            label="Años de uso"
-            type="number"
-            step="0.1"
-            min="0"
-            value={form.years_in_use}
-            onChange={(e) => set("years_in_use", e.target.value)}
-          />
-        </div>
+            </RowSelect>
+          </FieldRow>
+          <FieldRow label="Años de uso">
+            <RowInput
+              type="number"
+              step="0.1"
+              min="0"
+              value={form.years_in_use}
+              onChange={(e) => set("years_in_use", e.target.value)}
+            />
+          </FieldRow>
+        </FieldGroup>
         <LabeledTextarea
           label="Notas de mantenimiento/servicio"
           value={form.condition_notes}
