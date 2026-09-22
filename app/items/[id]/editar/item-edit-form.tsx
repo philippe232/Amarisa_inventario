@@ -8,12 +8,17 @@ import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { CONDITION_OPTIONS } from "@/lib/condition";
 import PhotoManager from "@/components/PhotoManager";
-import type { ConditionRating, Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
+import type { ConditionRating, DataStatus, Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
   { value: "for_sale", label: "En venta" },
   { value: "reserved", label: "Reservado" },
   { value: "sold", label: "Vendido" },
+];
+
+const DATA_STATUS_OPTIONS: { value: DataStatus; label: string }[] = [
+  { value: "fetched", label: "Obtenido (Claude)" },
+  { value: "verified", label: "Verificado" },
 ];
 
 // Ported from reference/cereza's gasto-editar-form.tsx row shape (label
@@ -155,6 +160,7 @@ type FormState = {
   suggested_resale_price: string;
   asking_price_override: string;
   status: ItemStatus;
+  data_status: DataStatus | "";
 };
 
 function toFormState(item: Item): FormState {
@@ -180,6 +186,7 @@ function toFormState(item: Item): FormState {
     suggested_resale_price: item.suggested_resale_price != null ? String(item.suggested_resale_price) : "",
     asking_price_override: item.asking_price_override != null ? String(item.asking_price_override) : "",
     status: item.status,
+    data_status: item.data_status ?? "",
   };
 }
 
@@ -289,6 +296,7 @@ export default function ItemEditForm({ id }: { id: string }) {
         suggested_resale_price: numOrNull(form.suggested_resale_price),
         asking_price_override: numOrNull(form.asking_price_override),
         status: form.status,
+        data_status: form.data_status || null,
       })
       .eq("id", id);
 
@@ -381,6 +389,19 @@ export default function ItemEditForm({ id }: { id: string }) {
           <FieldRow label="Estado">
             <RowSelect value={form.status} onChange={(e) => set("status", e.target.value as ItemStatus)}>
               {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </RowSelect>
+          </FieldRow>
+          <FieldRow label="Estado de datos">
+            <RowSelect
+              value={form.data_status}
+              onChange={(e) => set("data_status", e.target.value as FormState["data_status"])}
+            >
+              <option value="">Sin dato</option>
+              {DATA_STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>

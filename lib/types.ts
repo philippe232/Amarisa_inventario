@@ -9,6 +9,13 @@ export type ItemStatus = "for_sale" | "reserved" | "sold";
 // badge/color.
 export type ConditionRating = "very_good" | "good" | "needs_maintenance" | "needs_repair";
 
+// Internal workflow tag (db/migrations/0010) — whether Claude populated
+// this row via online research (brand/model/serial -> specs) versus a
+// human having confirmed it against the physical unit. Never null-vs-
+// "manual": null just means this workflow was never used on the row
+// (e.g. the original spreadsheet import).
+export type DataStatus = "fetched" | "verified";
+
 export type Item = {
   id: string;
   name: string;
@@ -45,6 +52,7 @@ export type Item = {
   // unit retail listings) — input for setting suggested_resale_price,
   // not itself shown to buyers. Same masking (see 0008).
   reference_price: number | null;
+  data_status: DataStatus | null;
   created_at: string;
   updated_at: string;
 };
