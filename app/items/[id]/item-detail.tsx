@@ -180,7 +180,8 @@ export default function ItemDetail({ id }: { id: string }) {
           )}
         </div>
         <div className="grid grid-cols-2 gap-3 pt-1">
-          <Field label="Precio de compra original" value={item.purchase_price != null ? formatCurrency(item.purchase_price) : null} />
+          {/* Precio de compra original is deliberately not repeated here
+              — it's already shown as the struck-through amount above. */}
           <Field label="Factura" value={item.has_factura == null ? null : item.has_factura ? "Sí" : "No"} />
           {/* Only ever populated for an Editor/Owner session — items_public
               nulls it out server-side for everyone else. */}
