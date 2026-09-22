@@ -1,13 +1,13 @@
 import { CONDITION_LABELS } from "@/lib/condition";
 import type { ConditionRating } from "@/lib/types";
 
-// Same outline-badge shape as StatusBadge — green→gray→amber→red reads
-// as a best-to-worst scale without needing a 4th brand-new hue.
+// Same outline-badge shape as StatusBadge — deep green -> light green ->
+// yellow -> orange reads as a best-to-worst scale.
 const COLORS: Record<ConditionRating, string> = {
-  mint: "border-positive/30 bg-positive/10 text-positive",
-  very_good: "border-neutral/30 bg-neutral/10 text-neutral",
-  needs_maintenance: "border-caution/30 bg-caution/10 text-caution",
-  needs_repair: "border-negative/30 bg-negative/10 text-negative",
+  very_good: "border-positive/30 bg-positive/10 text-positive",
+  good: "border-positive-light/30 bg-positive-light/10 text-positive-light",
+  needs_maintenance: "border-yellow/30 bg-yellow/10 text-yellow",
+  needs_repair: "border-orange/30 bg-orange/10 text-orange",
 };
 
 export default function ConditionBadge({ rating }: { rating: ConditionRating }) {

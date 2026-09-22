@@ -4,9 +4,10 @@
 
 export type ItemStatus = "for_sale" | "reserved" | "sold";
 
-// Short 4-point scale (db/migrations/0006) — replaces the old free-form
-// 0-100 condition_pct with something that reads as a badge/color.
-export type ConditionRating = "mint" | "very_good" | "needs_maintenance" | "needs_repair";
+// Short 4-point scale (db/migrations/0006, rescaled by 0007) — replaces
+// the old free-form 0-100 condition_pct with something that reads as a
+// badge/color.
+export type ConditionRating = "very_good" | "good" | "needs_maintenance" | "needs_repair";
 
 export type Item = {
   id: string;

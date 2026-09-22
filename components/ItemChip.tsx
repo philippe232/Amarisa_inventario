@@ -54,10 +54,19 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
         <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
           {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
         </p>
-        {item.purchase_price != null && (
-          <p className="mt-0.5 text-[12px] text-ink-faint line-through [font-variant-numeric:tabular-nums]">
-            {formatCurrency(item.purchase_price)}
-          </p>
+        {(item.purchase_price != null || item.discount_pct != null) && (
+          <div className="mt-0.5 flex items-center justify-end gap-1">
+            {item.purchase_price != null && (
+              <p className="text-[12px] text-ink-faint line-through [font-variant-numeric:tabular-nums]">
+                {formatCurrency(item.purchase_price)}
+              </p>
+            )}
+            {item.discount_pct != null && (
+              <span className="shrink-0 rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[10px] font-bold text-positive">
+                -{item.discount_pct}%
+              </span>
+            )}
+          </div>
         )}
       </div>
     </Row>
