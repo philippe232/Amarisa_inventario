@@ -184,7 +184,8 @@ export default function ItemDetail({ id }: { id: string }) {
               — it's already shown as the struck-through amount above. */}
           <Field label="Factura" value={item.has_factura == null ? null : item.has_factura ? "Sí" : "No"} />
           {/* Only ever populated for an Editor/Owner session — items_public
-              nulls it out server-side for everyone else. */}
+              nulls both out server-side for everyone else. */}
+          <Field label="Precio de referencia (mercado)" value={item.reference_price != null ? formatCurrency(item.reference_price) : null} />
           <Field label="Precio sugerido (investigación)" value={item.suggested_resale_price != null ? formatCurrency(item.suggested_resale_price) : null} />
         </div>
       </div>

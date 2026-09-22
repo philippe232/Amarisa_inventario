@@ -151,6 +151,7 @@ type FormState = {
   condition_notes: string;
   has_factura: "unknown" | "yes" | "no";
   purchase_price: string;
+  reference_price: string;
   suggested_resale_price: string;
   asking_price_override: string;
   status: ItemStatus;
@@ -175,6 +176,7 @@ function toFormState(item: Item): FormState {
     condition_notes: item.condition_notes ?? "",
     has_factura: item.has_factura == null ? "unknown" : item.has_factura ? "yes" : "no",
     purchase_price: item.purchase_price != null ? String(item.purchase_price) : "",
+    reference_price: item.reference_price != null ? String(item.reference_price) : "",
     suggested_resale_price: item.suggested_resale_price != null ? String(item.suggested_resale_price) : "",
     asking_price_override: item.asking_price_override != null ? String(item.asking_price_override) : "",
     status: item.status,
@@ -283,6 +285,7 @@ export default function ItemEditForm({ id }: { id: string }) {
         condition_notes: form.condition_notes || null,
         has_factura: form.has_factura === "unknown" ? null : form.has_factura === "yes",
         purchase_price: numOrNull(form.purchase_price),
+        reference_price: numOrNull(form.reference_price),
         suggested_resale_price: numOrNull(form.suggested_resale_price),
         asking_price_override: numOrNull(form.asking_price_override),
         status: form.status,
@@ -409,6 +412,15 @@ export default function ItemEditForm({ id }: { id: string }) {
               <option value="no">No</option>
             </RowSelect>
           </FieldRow>
+          <FieldRow label="Precio de referencia (mercado)">
+            <RowInput
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.reference_price}
+              onChange={(e) => set("reference_price", e.target.value)}
+            />
+          </FieldRow>
           <FieldRow label="Precio sugerido (investigación)">
             <RowInput
               type="number"
@@ -429,14 +441,16 @@ export default function ItemEditForm({ id }: { id: string }) {
           </FieldRow>
         </FieldGroup>
         <p className="text-xs text-ink-soft">
+          El de referencia es solo un dato externo (p. ej. precio promedio de artículos nuevos similares en el
+          mercado) — no afecta el precio al público.{" "}
           {form.asking_price_override
             ? "Precio al público: el de venta (arriba)."
             : "Precio al público: el sugerido, hasta que captures uno de venta."}
           {item.discount_pct != null && ` Descuento vs. compra: ${item.discount_pct}% (se actualiza solo al guardar).`}
         </p>
-        {/* Precio sugerido/de venta solo las ve Editor/Owner — items_public
-            (0006) los oculta para cualquier otra sesión; esta pantalla ya
-            requiere ese rol para cargar. */}
+        {/* Precio de referencia/sugerido/de venta solo las ve Editor/Owner
+            — items_public (0006/0008) los oculta para cualquier otra
+            sesión; esta pantalla ya requiere ese rol para cargar. */}
       </section>
 
       <section className="space-y-3">

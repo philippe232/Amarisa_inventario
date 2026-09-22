@@ -41,6 +41,10 @@ export type Item = {
   asking_price: number | null;
   discount_pct: number | null;
   status: ItemStatus;
+  // External market data point (e.g. a blended average of current new-
+  // unit retail listings) — input for setting suggested_resale_price,
+  // not itself shown to buyers. Same masking (see 0008).
+  reference_price: number | null;
   created_at: string;
   updated_at: string;
 };
