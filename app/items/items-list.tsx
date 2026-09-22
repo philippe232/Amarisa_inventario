@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useSessionInfo } from "@/lib/auth";
 import ItemChip from "@/components/ItemChip";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
@@ -14,6 +17,9 @@ type ItemRowFromQuery = Item & {
 
 export default function ItemsList() {
   const supabase = createClient();
+  const router = useRouter();
+  const { role } = useSessionInfo();
+  const [creating, setCreating] = useState(false);
 
   const [items, setItems] = useState<ItemListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,6 +161,27 @@ export default function ItemsList() {
 
   const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0;
 
+  // Insert a minimal placeholder row, then hand off to the real edit
+  // screen for everything else — reuses that form entirely instead of
+  // building a separate "new item" form. "Nuevo artículo" as the name
+  // is deliberately generic; items_ensure_unique_name (0006) auto-
+  // suffixes " #01"/" #02" if it collides with an earlier draft, same
+  // as any other duplicate name.
+  async function handleCreate() {
+    setCreating(true);
+    const { data, error: insertError } = await supabase
+      .from("items")
+      .insert({ name: "Nuevo artículo", quantity: 1, status: "for_sale" })
+      .select("id")
+      .single();
+    setCreating(false);
+    if (insertError || !data) {
+      setError(insertError?.message ?? "No se pudo crear el artículo.");
+      return;
+    }
+    router.push(`/items/${data.id}/editar`);
+  }
+
   return (
     <>
       <SearchFilterBar
@@ -217,6 +244,29 @@ export default function ItemsList() {
           {filteredItems.map((item) => (
             <ItemChip key={item.id} item={item} href={`/items/${item.id}`} />
           ))}
+        </div>
+      )}
+
+      {/* Spacer so the fixed bar below never covers the last row —
+          matches its own h-12 button + p-3 padding + border. */}
+      {role && <div className="h-[76px]" aria-hidden="true" />}
+
+      {/* Full-width bar pinned to the bottom, same shape as Cereza's
+          PrimaryActionBar (never a FAB) — Amarisa has no bottom tab
+          tray to pin above, so this sits flush against the viewport
+          edge instead. Editor/Owner only; a Viewer/Bidder has nothing
+          to create here. */}
+      {role && (
+        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-md bg-ink text-sm font-semibold text-white disabled:opacity-50"
+          >
+            <Plus className="h-5 w-5" aria-hidden="true" />
+            {creating ? "Creando..." : "Agregar artículo"}
+          </button>
         </div>
       )}
     </>
