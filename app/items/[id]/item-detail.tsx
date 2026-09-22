@@ -155,7 +155,10 @@ export default function ItemDetail({ id }: { id: string }) {
             </Link>
           )}
         </div>
-        <div className="mt-1.5">
+        {/* Cantidad disponible + Estado — same Encabezado grouping/order
+            (Nombre, Cantidad disponible, Estado) as the edit form. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {item.quantity}</span>}
           <StatusBadge status={item.status} />
         </div>
       </div>
@@ -185,8 +188,10 @@ export default function ItemDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* 3. Description */}
-      {(item.brand || item.model || item.serial_number || item.area || item.type || item.quantity > 1 || formatDimensions(item) || item.description) && (
+      {/* 3. Description — same field grouping/order as the edit form's
+          own Descripción section (Marca, Modelo, No. de serie, Área,
+          Tipo, Ubicación, dimensiones, then free text). */}
+      {(item.brand || item.model || item.serial_number || item.area || item.type || item.location || formatDimensions(item) || item.description) && (
         <div className="mt-5 space-y-3 border-t border-line px-3.5 pt-4">
           <SectionHeading>Descripción</SectionHeading>
           <div className="grid grid-cols-2 gap-3">
@@ -195,7 +200,7 @@ export default function ItemDetail({ id }: { id: string }) {
             <Field label="No. de serie" value={item.serial_number} />
             <Field label="Área" value={item.area} />
             <Field label="Tipo" value={item.type} />
-            <Field label="Cantidad disponible" value={item.quantity > 1 ? item.quantity : null} />
+            <Field label="Ubicación" value={item.location} />
             <Field label="Dimensiones" value={formatDimensions(item)} />
           </div>
           {item.description && <p className="text-sm whitespace-pre-wrap text-ink">{item.description}</p>}
