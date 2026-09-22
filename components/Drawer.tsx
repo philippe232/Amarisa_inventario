@@ -8,18 +8,25 @@ import { useSessionInfo } from "@/lib/auth";
 
 // Ported from reference/cereza/app/(shell)/drawer.tsx's overlay/panel
 // shape (fixed inset-0 flex, w-72 panel + flex-1 backdrop button, no
-// open animation) — simplified to a flat two-item list since this app
-// has no roles/sections/badges to account for.
-const NAV_ITEMS = [
+// open animation) — simplified to a flat list since this app has no
+// sections/badges to account for.
+const VIEWER_NAV_ITEMS = [
   { href: "/items", label: "Inicio", icon: Home },
   { href: "/wishlist", label: "Mi lista", icon: Heart },
 ];
+// Editor/Owner's whole app surface is list/detail/edit — Mi lista is a
+// customer feature (bids on their own anonymous session's wishlist),
+// meaningless for an admin identity. Scoped the same for Editor and
+// Owner "for now" per explicit instruction, not a permissions split.
+const ADMIN_NAV_ITEMS = [{ href: "/items", label: "Inicio", icon: Home }];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const { isAnonymous, email, role } = useSessionInfo();
 
   if (!open) return null;
+
+  const navItems = role ? ADMIN_NAV_ITEMS : VIEWER_NAV_ITEMS;
 
   async function handleLogout() {
     await createClient().auth.signOut();
@@ -37,7 +44,7 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+          {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}

@@ -179,7 +179,10 @@ export default function ItemsList() {
       setError(insertError?.message ?? "No se pudo crear el artículo.");
       return;
     }
-    router.push(`/items/${data.id}/editar`);
+    // ?new=1 tells the edit screen this row has never been through a
+    // real Guardar yet — Cancelar there discards it instead of just
+    // navigating away. See item-edit-form.tsx's own handling.
+    router.push(`/items/${data.id}/editar?new=1`);
   }
 
   return (

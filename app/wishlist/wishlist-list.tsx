@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
+import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import ItemChip from "@/components/ItemChip";
 import type { Item, ItemListRow } from "@/lib/types";
@@ -21,10 +23,20 @@ type WishlistRowData = {
 
 export default function WishlistList() {
   const supabase = createClient();
+  const router = useRouter();
+  const { role, loading: roleLoading } = useSessionInfo();
 
   const [rows, setRows] = useState<WishlistRowData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Editor/Owner has no reason to be here — Mi lista is a customer
+  // feature (bids on an anonymous session's own wishlist), and the
+  // drawer no longer even links to it for an admin. Bounces away
+  // anyone who lands here anyway (a stale bookmark, browser back).
+  useEffect(() => {
+    if (!roleLoading && role) router.replace("/items");
+  }, [role, roleLoading, router]);
 
   // Same plain fetch-on-mount pattern as app/items/items-list.tsx — no
   // cache, refetches every time this screen is navigated back to.
@@ -99,6 +111,7 @@ export default function WishlistList() {
     setRows((prev) => prev.map((r) => (r.wishlistId === wishlistId ? { ...r, bidAmount } : r)));
   }
 
+  if (roleLoading || role) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
   if (loading) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
   if (error) return <p className="p-4 text-sm text-red-600">Error: {error}</p>;
   if (rows.length === 0) return <p className="p-4 text-sm text-ink-soft">Tu lista está vacía.</p>;

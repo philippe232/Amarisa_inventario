@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { CONDITION_OPTIONS } from "@/lib/condition";
 import PhotoManager from "@/components/PhotoManager";
+import ModalSheet from "@/components/ModalSheet";
 import type { ConditionRating, DataStatus, Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
@@ -198,7 +199,15 @@ function numOrNull(s: string): number | null {
 export default function ItemEditForm({ id }: { id: string }) {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { role, loading: roleLoading } = useSessionInfo();
+
+  // Set only by items-list.tsx's "Agregar artículo" (?new=1) — this is
+  // the very first visit to this row's edit screen, before it's ever
+  // been through a real Guardar. handleSave always lands on /items/{id}
+  // afterward, never back here, so a normal "click the pencil to edit"
+  // visit never carries this param.
+  const isNew = searchParams.get("new") === "1";
 
   const [item, setItem] = useState<Item | null>(null);
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);
@@ -207,6 +216,8 @@ export default function ItemEditForm({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [areaOptions, setAreaOptions] = useState<string[]>([]);
   const [typeOptions, setTypeOptions] = useState<string[]>([]);
   const [locationOptions, setLocationOptions] = useState<string[]>([]);
@@ -308,6 +319,56 @@ export default function ItemEditForm({ id }: { id: string }) {
     router.push(`/items/${id}`);
   }
 
+  // Shared by the confirmed "Borrar artículo" button and the silent
+  // discard-on-Cancelar path for a never-saved draft — deletes the
+  // photo bucket's own folder first (best-effort, same tolerance
+  // PhotoManager's own delete uses), then the row itself.
+  // item_photos/item_links/wishlist_items all cascade on delete
+  // (0001/0003), so nothing else needs cleaning up.
+  async function deleteItem(): Promise<boolean> {
+    const { data: files } = await supabase.storage.from("item-photos").list(id);
+    if (files && files.length > 0) {
+      await supabase.storage.from("item-photos").remove(files.map((f) => `${id}/${f.name}`));
+    }
+    // .select("id") so a delete RLS blocks (0 rows affected, no thrown
+    // error — Supabase just filters which rows a write can touch) is
+    // caught here instead of read as silent success: found live, before
+    // 0012 added the admins-can-delete policy items never had.
+    const { data: deletedRows, error: deleteError } = await supabase.from("items").delete().eq("id", id).select("id");
+    if (deleteError) {
+      setError(deleteError.message);
+      return false;
+    }
+    if (!deletedRows || deletedRows.length === 0) {
+      setError("No se pudo borrar el artículo.");
+      return false;
+    }
+    return true;
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    const ok = await deleteItem();
+    setDeleting(false);
+    if (!ok) return;
+    setShowDeleteConfirm(false);
+    router.push("/items");
+  }
+
+  async function handleCancel() {
+    if (!isNew) {
+      router.push(`/items/${id}`);
+      return;
+    }
+    // A fresh, never-saved draft — discarding it silently (no confirm
+    // dialog) matches what was asked: Cancelar on a brand-new article
+    // just undoes the "Agregar artículo" tap, nothing was ever really
+    // there to lose.
+    await deleteItem();
+    router.push("/items");
+  }
+
   async function handleAddLink() {
     if (!newLinkUrl.trim()) return;
     setLinkError(null);
@@ -360,9 +421,9 @@ export default function ItemEditForm({ id }: { id: string }) {
     <form onSubmit={handleSave} className="space-y-6 px-3.5 py-4 pb-8">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-ink">Editar artículo</h1>
-        <Link href={`/items/${id}`} className="text-sm text-ink-soft">
+        <button type="button" onClick={handleCancel} className="text-sm text-ink-soft">
           Cancelar
-        </Link>
+        </button>
       </div>
 
       <section className="space-y-3">
@@ -617,6 +678,44 @@ export default function ItemEditForm({ id }: { id: string }) {
       >
         {saving ? "Guardando..." : "Guardar"}
       </button>
+
+      {/* Same size/shape as items-list.tsx's "Agregar artículo" bar,
+          just red — a deliberately distinct destructive action, never
+          reachable without the confirm step below. */}
+      <button
+        type="button"
+        onClick={() => setShowDeleteConfirm(true)}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-md bg-negative text-sm font-semibold text-white"
+      >
+        <Trash2 className="h-5 w-5" aria-hidden="true" />
+        Borrar artículo
+      </button>
+
+      {showDeleteConfirm && (
+        <ModalSheet onBackdropClick={() => setShowDeleteConfirm(false)}>
+          <h2 className="text-lg font-bold text-ink">¿Borrar este artículo?</h2>
+          <p className="mt-2 text-sm text-ink-soft">
+            Esta acción no se puede deshacer. También se eliminarán sus fotos y referencias.
+          </p>
+          <div className="mt-5 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="flex h-11 flex-1 items-center justify-center rounded-md border border-line-strong text-sm font-medium text-ink"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex h-11 flex-1 items-center justify-center rounded-md bg-negative text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {deleting ? "Borrando..." : "Borrar"}
+            </button>
+          </div>
+        </ModalSheet>
+      )}
     </form>
   );
 }
