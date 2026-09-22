@@ -44,6 +44,76 @@ function RowSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={rowInputClass} />;
 }
 
+const ADD_NEW = "__add_new__";
+
+// Área/Tipo/Ubicación are free-text columns on purpose (a new value
+// never needs a migration — see db/migrations/0001's comment), but
+// typing them from scratch invites drift ("Piso" vs "piso"). This picks
+// from whatever values already exist across the catalog, with an
+// "Agregar nuevo" escape hatch that reveals a plain text input —
+// there's no separate reference table to insert into, the new value
+// just becomes selectable itself the next time this list is loaded.
+function PickerField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const allOptions = value && !options.includes(value) ? [...options, value].sort() : options;
+
+  if (adding) {
+    return (
+      <FieldRow label={label}>
+        <div className="flex items-center gap-1.5">
+          <RowInput
+            autoFocus
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Nuevo valor"
+          />
+          <button
+            type="button"
+            onClick={() => setAdding(false)}
+            className="shrink-0 text-xs text-ink-faint underline"
+          >
+            Elegir
+          </button>
+        </div>
+      </FieldRow>
+    );
+  }
+
+  return (
+    <FieldRow label={label}>
+      <RowSelect
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === ADD_NEW) {
+            onChange("");
+            setAdding(true);
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+      >
+        <option value="">Sin dato</option>
+        {allOptions.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+        <option value={ADD_NEW}>+ Agregar nuevo...</option>
+      </RowSelect>
+    </FieldRow>
+  );
+}
+
 function LabeledTextarea({
   label,
   ...props
@@ -128,6 +198,9 @@ export default function ItemEditForm({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [areaOptions, setAreaOptions] = useState<string[]>([]);
+  const [typeOptions, setTypeOptions] = useState<string[]>([]);
+  const [locationOptions, setLocationOptions] = useState<string[]>([]);
 
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [newLinkLabel, setNewLinkLabel] = useState("");
@@ -145,10 +218,15 @@ export default function ItemEditForm({ id }: { id: string }) {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const [itemRes, photosRes, linksRes] = await Promise.all([
+      const [itemRes, photosRes, linksRes, tagsRes] = await Promise.all([
         supabase.from("items").select("*").eq("id", id).single(),
         supabase.from("item_photos").select("*").eq("item_id", id).order("sort_order"),
         supabase.from("item_links").select("*").eq("item_id", id).order("created_at"),
+        // Every existing área/tipo/ubicación in the catalog, so
+        // PickerField can offer them instead of free typing — these
+        // are plain columns on items, not a reference table, so
+        // "every value in use" IS the option list.
+        supabase.from("items").select("area, type, location"),
       ]);
       if (cancelled) return;
       if (itemRes.error) {
@@ -160,6 +238,12 @@ export default function ItemEditForm({ id }: { id: string }) {
       setForm(toFormState(itemRes.data as Item));
       setPhotos((photosRes.data ?? []) as ItemPhoto[]);
       setLinks((linksRes.data ?? []) as ItemLink[]);
+      const tagRows = (tagsRes.data ?? []) as Pick<Item, "area" | "type" | "location">[];
+      const distinct = (values: (string | null)[]) =>
+        [...new Set(values.filter((v): v is string => Boolean(v)))].sort();
+      setAreaOptions(distinct(tagRows.map((r) => r.area)));
+      setTypeOptions(distinct(tagRows.map((r) => r.type)));
+      setLocationOptions(distinct(tagRows.map((r) => r.location)));
       setError(null);
       setLoading(false);
     }
@@ -367,15 +451,14 @@ export default function ItemEditForm({ id }: { id: string }) {
           <FieldRow label="No. de serie">
             <RowInput value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Área">
-            <RowInput value={form.area} onChange={(e) => set("area", e.target.value)} />
-          </FieldRow>
-          <FieldRow label="Tipo">
-            <RowInput value={form.type} onChange={(e) => set("type", e.target.value)} />
-          </FieldRow>
-          <FieldRow label="Ubicación">
-            <RowInput value={form.location} onChange={(e) => set("location", e.target.value)} />
-          </FieldRow>
+          <PickerField label="Área" value={form.area} options={areaOptions} onChange={(v) => set("area", v)} />
+          <PickerField label="Tipo" value={form.type} options={typeOptions} onChange={(v) => set("type", v)} />
+          <PickerField
+            label="Ubicación"
+            value={form.location}
+            options={locationOptions}
+            onChange={(v) => set("location", v)}
+          />
           <FieldRow label="Alto (cm)">
             <RowInput
               type="number"
