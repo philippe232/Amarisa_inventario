@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
@@ -120,6 +120,122 @@ function PickerField({
   );
 }
 
+// Uploads straight to the private "item-documents" bucket and writes
+// the resulting path onto the row immediately (same immediate-write
+// pattern as PhotoManager, just a single file instead of a list) —
+// factura_pdf is never part of the big Guardar payload. The bucket
+// isn't public (0015), so viewing means signing a short-lived URL on
+// demand rather than a plain <a href>.
+function FacturaPdfUpload({
+  itemId,
+  path,
+  onChange,
+}: {
+  itemId: string;
+  path: string | null;
+  onChange: (path: string | null) => void;
+}) {
+  const supabase = createClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFileSelected(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const newPath = `${itemId}/factura-${crypto.randomUUID()}.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from("item-documents")
+        .upload(newPath, file, { contentType: "application/pdf" });
+      if (uploadError) throw uploadError;
+
+      const { error: updateError } = await supabase
+        .from("items")
+        .update({ factura_pdf: newPath })
+        .eq("id", itemId);
+      if (updateError) throw updateError;
+
+      // Old file cleaned up after the new one is safely linked, not
+      // before — if the update above had failed, the old PDF stays
+      // recoverable instead of being deleted for nothing.
+      if (path) await supabase.storage.from("item-documents").remove([path]);
+      onChange(newPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo subir el archivo.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleView() {
+    if (!path) return;
+    setOpening(true);
+    setError(null);
+    const { data, error: signError } = await supabase.storage.from("item-documents").createSignedUrl(path, 60);
+    setOpening(false);
+    if (signError || !data) {
+      setError("No se pudo abrir el archivo.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleRemove() {
+    if (!path) return;
+    setError(null);
+    const removedPath = path;
+    onChange(null);
+    const [{ error: updateError }] = await Promise.all([
+      supabase.from("items").update({ factura_pdf: null }).eq("id", itemId),
+      supabase.storage.from("item-documents").remove([removedPath]),
+    ]);
+    if (updateError) {
+      setError(updateError.message);
+      onChange(removedPath);
+    }
+  }
+
+  return (
+    <div>
+      {path ? (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleView}
+            disabled={opening}
+            className="text-sm font-medium text-ink underline disabled:opacity-50"
+          >
+            {opening ? "Abriendo..." : "Ver PDF"}
+          </button>
+          <button type="button" onClick={handleRemove} className="text-sm text-negative">
+            Quitar
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="rounded-md border border-line-strong bg-card px-3 py-2 text-sm font-medium text-ink disabled:opacity-50"
+        >
+          {uploading ? "Subiendo..." : "Subir PDF"}
+        </button>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => handleFileSelected(e.target.files?.[0] ?? null)}
+      />
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 function LabeledTextarea({
   label,
   ...props
@@ -157,7 +273,6 @@ type FormState = {
   condition_notes: string;
   has_factura: "unknown" | "yes" | "no";
   factura_cfdi: string;
-  factura_pdf: string;
   purchase_price: string;
   reference_price: string;
   suggested_resale_price: string;
@@ -185,7 +300,6 @@ function toFormState(item: Item): FormState {
     condition_notes: item.condition_notes ?? "",
     has_factura: item.has_factura == null ? "unknown" : item.has_factura ? "yes" : "no",
     factura_cfdi: item.factura_cfdi ?? "",
-    factura_pdf: item.factura_pdf ?? "",
     purchase_price: item.purchase_price != null ? String(item.purchase_price) : "",
     reference_price: item.reference_price != null ? String(item.reference_price) : "",
     suggested_resale_price: item.suggested_resale_price != null ? String(item.suggested_resale_price) : "",
@@ -216,6 +330,9 @@ export default function ItemEditForm({ id }: { id: string }) {
   const [item, setItem] = useState<Item | null>(null);
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);
   const [links, setLinks] = useState<ItemLink[]>([]);
+  // Storage path in the private "item-documents" bucket, not a URL —
+  // managed independently of `form`/Guardar, same as `photos` above.
+  const [facturaPdfPath, setFacturaPdfPath] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +377,7 @@ export default function ItemEditForm({ id }: { id: string }) {
       }
       setItem(itemRes.data as Item);
       setForm(toFormState(itemRes.data as Item));
+      setFacturaPdfPath((itemRes.data as Item).factura_pdf);
       setPhotos((photosRes.data ?? []) as ItemPhoto[]);
       setLinks((linksRes.data ?? []) as ItemLink[]);
       const tagRows = (tagsRes.data ?? []) as Pick<Item, "area" | "type" | "location">[];
@@ -307,7 +425,9 @@ export default function ItemEditForm({ id }: { id: string }) {
         condition_notes: form.condition_notes || null,
         has_factura: form.has_factura === "unknown" ? null : form.has_factura === "yes",
         factura_cfdi: form.factura_cfdi || null,
-        factura_pdf: form.factura_pdf || null,
+        // factura_pdf is NOT here — FacturaPdfUpload writes it directly
+        // (immediate upload/remove, same pattern as PhotoManager's own
+        // photos), so a stale form value can never clobber it.
         purchase_price: numOrNull(form.purchase_price),
         reference_price: numOrNull(form.reference_price),
         suggested_resale_price: numOrNull(form.suggested_resale_price),
@@ -335,6 +455,10 @@ export default function ItemEditForm({ id }: { id: string }) {
     const { data: files } = await supabase.storage.from("item-photos").list(id);
     if (files && files.length > 0) {
       await supabase.storage.from("item-photos").remove(files.map((f) => `${id}/${f.name}`));
+    }
+    const { data: docs } = await supabase.storage.from("item-documents").list(id);
+    if (docs && docs.length > 0) {
+      await supabase.storage.from("item-documents").remove(docs.map((f) => `${id}/${f.name}`));
     }
     // .select("id") so a delete RLS blocks (0 rows affected, no thrown
     // error — Supabase just filters which rows a write can touch) is
@@ -503,13 +627,8 @@ export default function ItemEditForm({ id }: { id: string }) {
           <FieldRow label="CFDI (folio/UUID)">
             <RowInput value={form.factura_cfdi} onChange={(e) => set("factura_cfdi", e.target.value)} />
           </FieldRow>
-          <FieldRow label="Link al PDF de la factura">
-            <RowInput
-              type="url"
-              value={form.factura_pdf}
-              onChange={(e) => set("factura_pdf", e.target.value)}
-              placeholder="https://..."
-            />
+          <FieldRow label="Factura (PDF)">
+            <FacturaPdfUpload itemId={id} path={facturaPdfPath} onChange={setFacturaPdfPath} />
           </FieldRow>
           <FieldRow label="Precio de referencia (mercado)">
             <RowInput

@@ -37,6 +37,8 @@ export default function ItemDetail({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [openingFactura, setOpeningFactura] = useState(false);
+
   const [wishlistRowId, setWishlistRowId] = useState<string | null>(null);
   const [wishlistBusy, setWishlistBusy] = useState(false);
   const [wishlistError, setWishlistError] = useState<string | null>(null);
@@ -93,6 +95,17 @@ export default function ItemDetail({ id }: { id: string }) {
       cancelled = true;
     };
   }, [supabase, id]);
+
+  // item-documents (0015) is a private bucket — item.factura_pdf is a
+  // storage path, not a fetchable URL, so viewing it means signing a
+  // short-lived URL on demand rather than a plain <a href>.
+  async function handleViewFactura() {
+    if (!item?.factura_pdf) return;
+    setOpeningFactura(true);
+    const { data } = await supabase.storage.from("item-documents").createSignedUrl(item.factura_pdf, 60);
+    setOpeningFactura(false);
+    if (data) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
 
   async function handleToggleWishlist() {
     setWishlistBusy(true);
@@ -190,9 +203,9 @@ export default function ItemDetail({ id }: { id: string }) {
             label="PDF de la factura"
             value={
               item.factura_pdf ? (
-                <a href={item.factura_pdf} target="_blank" rel="noopener noreferrer" className="underline">
-                  Ver PDF
-                </a>
+                <button type="button" onClick={handleViewFactura} disabled={openingFactura} className="underline disabled:opacity-50">
+                  {openingFactura ? "Abriendo..." : "Ver PDF"}
+                </button>
               ) : null
             }
           />

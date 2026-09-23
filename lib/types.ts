@@ -36,9 +36,11 @@ export type Item = {
   condition_notes: string | null;
   maintenance_notes: string | null;
   has_factura: boolean | null;
-  // CFDI folio/UUID and a link to where the PDF itself is kept — both
-  // Editor/Owner-only (items_public masks them; see 0013). has_factura
-  // itself stays public.
+  // CFDI folio/UUID, and the storage path of an uploaded invoice PDF
+  // (not a URL — the "item-documents" bucket is private, see 0015; the
+  // app signs a short-lived URL on demand to view it). Both Editor/
+  // Owner-only (items_public masks them; see 0013). has_factura itself
+  // stays public.
   factura_cfdi: string | null;
   factura_pdf: string | null;
   price_new: number | null;
