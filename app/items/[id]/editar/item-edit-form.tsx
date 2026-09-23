@@ -156,6 +156,8 @@ type FormState = {
   condition_rating: ConditionRating | "";
   condition_notes: string;
   has_factura: "unknown" | "yes" | "no";
+  factura_cfdi: string;
+  factura_pdf: string;
   purchase_price: string;
   reference_price: string;
   suggested_resale_price: string;
@@ -182,6 +184,8 @@ function toFormState(item: Item): FormState {
     condition_rating: item.condition_rating ?? "",
     condition_notes: item.condition_notes ?? "",
     has_factura: item.has_factura == null ? "unknown" : item.has_factura ? "yes" : "no",
+    factura_cfdi: item.factura_cfdi ?? "",
+    factura_pdf: item.factura_pdf ?? "",
     purchase_price: item.purchase_price != null ? String(item.purchase_price) : "",
     reference_price: item.reference_price != null ? String(item.reference_price) : "",
     suggested_resale_price: item.suggested_resale_price != null ? String(item.suggested_resale_price) : "",
@@ -302,6 +306,8 @@ export default function ItemEditForm({ id }: { id: string }) {
         condition_rating: form.condition_rating || null,
         condition_notes: form.condition_notes || null,
         has_factura: form.has_factura === "unknown" ? null : form.has_factura === "yes",
+        factura_cfdi: form.factura_cfdi || null,
+        factura_pdf: form.factura_pdf || null,
         purchase_price: numOrNull(form.purchase_price),
         reference_price: numOrNull(form.reference_price),
         suggested_resale_price: numOrNull(form.suggested_resale_price),
@@ -494,6 +500,17 @@ export default function ItemEditForm({ id }: { id: string }) {
               <option value="no">No</option>
             </RowSelect>
           </FieldRow>
+          <FieldRow label="CFDI (folio/UUID)">
+            <RowInput value={form.factura_cfdi} onChange={(e) => set("factura_cfdi", e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Link al PDF de la factura">
+            <RowInput
+              type="url"
+              value={form.factura_pdf}
+              onChange={(e) => set("factura_pdf", e.target.value)}
+              placeholder="https://..."
+            />
+          </FieldRow>
           <FieldRow label="Precio de referencia (mercado)">
             <RowInput
               type="number"
@@ -530,9 +547,10 @@ export default function ItemEditForm({ id }: { id: string }) {
             : "Precio al público: el sugerido, hasta que captures uno de venta."}
           {item.discount_pct != null && ` Descuento vs. compra: ${item.discount_pct}% (se actualiza solo al guardar).`}
         </p>
-        {/* Precio de referencia/sugerido/de venta solo las ve Editor/Owner
-            — items_public (0006/0008) los oculta para cualquier otra
-            sesión; esta pantalla ya requiere ese rol para cargar. */}
+        {/* Precio de referencia/sugerido/de venta, y el CFDI/link de PDF,
+            solo las ve Editor/Owner — items_public (0006/0008/0013) los
+            oculta para cualquier otra sesión; esta pantalla ya requiere
+            ese rol para cargar. */}
       </section>
 
       <section className="space-y-3">
