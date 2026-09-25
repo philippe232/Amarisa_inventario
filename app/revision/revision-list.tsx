@@ -11,13 +11,19 @@ import { formatDimensions, getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
 import ConditionBadge from "@/components/ConditionBadge";
 import StatusBadge from "@/components/StatusBadge";
+import PriorityBadge from "@/components/PriorityBadge";
+import ReviewStatusBadge from "@/components/ReviewStatusBadge";
 import SearchFilterBar from "@/components/SearchFilterBar";
 import { CONDITION_OPTIONS } from "@/lib/condition";
+import { PRIORITY_OPTIONS } from "@/lib/priority";
+import { REVIEW_STATUS_OPTIONS } from "@/lib/review-status";
 import type { Item, DataStatus } from "@/lib/types";
 
-// Best-to-worst rank, not alphabetical — same order CONDITION_OPTIONS
-// itself is defined in.
+// Best-to-worst / most-to-least-urgent / earliest-to-latest rank, not
+// alphabetical — same order each OPTIONS list is itself defined in.
 const CONDITION_RANK: Record<string, number> = Object.fromEntries(CONDITION_OPTIONS.map((o, idx) => [o.value, idx]));
+const PRIORITY_RANK: Record<string, number> = Object.fromEntries(PRIORITY_OPTIONS.map((o, idx) => [o.value, idx]));
+const REVIEW_STATUS_RANK: Record<string, number> = Object.fromEntries(REVIEW_STATUS_OPTIONS.map((o, idx) => [o.value, idx]));
 
 type SortValue = string | number | null;
 type SortDir = "asc" | "desc";
@@ -129,6 +135,20 @@ const COLUMNS: ColumnDef[] = [
     sortValue: (i) => i.quantity,
   },
   { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} />, sortValue: (i) => i.status },
+  {
+    key: "review_status",
+    group: "encabezado",
+    label: "Revisión",
+    render: (i) => (i.review_status ? <ReviewStatusBadge status={i.review_status} /> : <span className="text-ink-faint">—</span>),
+    sortValue: (i) => (i.review_status ? REVIEW_STATUS_RANK[i.review_status] : null),
+  },
+  {
+    key: "priority",
+    group: "encabezado",
+    label: "Prioridad",
+    render: (i) => (i.priority ? <PriorityBadge priority={i.priority} /> : <span className="text-ink-faint">—</span>),
+    sortValue: (i) => (i.priority ? PRIORITY_RANK[i.priority] : null),
+  },
   {
     key: "data_status",
     group: "encabezado",
@@ -262,15 +282,18 @@ const COLUMNS: ColumnDef[] = [
   },
 ];
 
-// The two pinned columns (always shown, outside the group-toggle
-// system) are sortable too — same {key,label,sortValue} shape as
-// COLUMNS, just rendered/positioned separately since they frame the
-// table rather than belonging to a section.
+// The pinned columns (always shown, outside the group-toggle system)
+// are sortable too — same {key,label,sortValue} shape as COLUMNS, just
+// rendered/positioned separately since they frame the table rather
+// than belonging to a section. ref_code sits right after the name —
+// it's the sticker code, an identity field like the name itself, not
+// something that should disappear when Encabezado is toggled off.
 const PINNED_START = { key: "name", label: "Artículo", sortValue: (i: Row) => getDisplayName(i) };
+const PINNED_REF = { key: "ref_code", label: "Ref.", sortValue: (i: Row) => i.ref_code };
 const PINNED_END = { key: "updated_at", label: "Actualizado", sortValue: (i: Row) => i.updated_at };
 
 const SORT_ACCESSORS: Record<string, (item: Row) => SortValue> = Object.fromEntries(
-  [PINNED_START, ...COLUMNS, PINNED_END].map((c) => [c.key, c.sortValue]),
+  [PINNED_START, PINNED_REF, ...COLUMNS, PINNED_END].map((c) => [c.key, c.sortValue]),
 );
 
 function compareValues(a: SortValue, b: SortValue, dir: SortDir): number {
@@ -449,7 +472,7 @@ export default function RevisionList() {
   }
 
   const activeColumns = useMemo(() => COLUMNS.filter((c) => visibleGroups.has(c.group)), [visibleGroups]);
-  const tableMinWidth = 220 + activeColumns.length * 150 + 220;
+  const tableMinWidth = 220 + 120 + activeColumns.length * 150 + 220;
 
   if (roleLoading || !role) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
 
@@ -549,6 +572,13 @@ export default function RevisionList() {
                                 dir={sortState[area]?.key === PINNED_START.key ? sortState[area]?.dir : undefined}
                                 onSort={(key) => handleSort(area, key)}
                               />
+                              <SortableTh
+                                colKey={PINNED_REF.key}
+                                label={PINNED_REF.label}
+                                active={sortState[area]?.key === PINNED_REF.key}
+                                dir={sortState[area]?.key === PINNED_REF.key ? sortState[area]?.dir : undefined}
+                                onSort={(key) => handleSort(area, key)}
+                              />
                               {activeColumns.map((c) => (
                                 <SortableTh
                                   key={c.key}
@@ -578,6 +608,7 @@ export default function RevisionList() {
                                   className={`border-b border-line text-sm last:border-0 ${item.revisar ? "bg-negative/5" : ""}`}
                                 >
                                   <td className="px-2.5 py-2 align-top font-semibold text-ink">{displayName}</td>
+                                  <td className="px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft">{item.ref_code ?? "—"}</td>
                                   {activeColumns.map((c) => (
                                     <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
                                       {c.render(item)}

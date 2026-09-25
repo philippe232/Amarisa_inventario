@@ -16,9 +16,25 @@ export type ConditionRating = "very_good" | "good" | "needs_maintenance" | "need
 // (e.g. the original spreadsheet import).
 export type DataStatus = "fetched" | "verified";
 
+// Internal triage order, not customer-facing (db/migrations/0017) —
+// which items to deal with first. items_public masks it to null for
+// anyone who isn't Editor/Owner.
+export type ItemPriority = "alta" | "media" | "baja";
+
+// Internal approval pipeline (db/migrations/0018), separate from
+// ItemStatus (the sale itself). Every item starts "nuevo"; never null.
+// Same masking as priority.
+export type ItemReviewStatus = "nuevo" | "en_revision" | "aprobado";
+
 export type Item = {
   id: string;
   name: string;
+  // Short, permanent, hand-writable code (db/migrations/0016) — meant
+  // for a physical sticker on the article itself. Server-generated on
+  // insert and enforced immutable by a trigger; never set or edited
+  // from the app. Always populated on the base table, but Editor/Owner-
+  // only for now (0019) — items_public masks it to null for anyone else.
+  ref_code: string | null;
   description: string | null;
   area: string | null;
   location: string | null;
@@ -60,6 +76,8 @@ export type Item = {
   // not itself shown to buyers. Same masking (see 0008).
   reference_price: number | null;
   data_status: DataStatus | null;
+  priority: ItemPriority | null;
+  review_status: ItemReviewStatus | null;
   created_at: string;
   updated_at: string;
 };

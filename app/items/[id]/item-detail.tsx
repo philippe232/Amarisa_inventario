@@ -11,6 +11,8 @@ import { formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
+import PriorityBadge from "@/components/PriorityBadge";
+import ReviewStatusBadge from "@/components/ReviewStatusBadge";
 import type { Item, ItemLink, ItemPhoto } from "@/lib/types";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -168,11 +170,20 @@ export default function ItemDetail({ id }: { id: string }) {
             </Link>
           )}
         </div>
+        {/* Editor/Owner-only for now (0019) — items_public nulls this out
+            for anyone else, same as review_status/priority below. Could
+            become public once there's an actual buyer-facing pass. */}
+        {item.ref_code && <p className="mt-0.5 font-mono text-xs text-ink-faint">Ref. {item.ref_code}</p>}
         {/* Cantidad disponible + Estado — same Encabezado grouping/order
-            (Nombre, Cantidad disponible, Estado) as the edit form. */}
+            (Nombre, Ref., Cantidad disponible, Estado, Revisión, Prioridad)
+            as the edit form. Revisión/Prioridad are Editor/Owner-only —
+            items_public already nulls them out for anyone else, so the
+            null check below is what actually hides them. */}
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {item.quantity}</span>}
           <StatusBadge status={item.status} />
+          {item.review_status && <ReviewStatusBadge status={item.review_status} />}
+          {item.priority && <PriorityBadge priority={item.priority} />}
         </div>
       </div>
 

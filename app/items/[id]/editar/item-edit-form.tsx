@@ -7,9 +7,11 @@ import { Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { CONDITION_OPTIONS } from "@/lib/condition";
+import { PRIORITY_OPTIONS } from "@/lib/priority";
+import { REVIEW_STATUS_OPTIONS } from "@/lib/review-status";
 import PhotoManager from "@/components/PhotoManager";
 import ModalSheet from "@/components/ModalSheet";
-import type { ConditionRating, DataStatus, Item, ItemLink, ItemPhoto, ItemStatus } from "@/lib/types";
+import type { ConditionRating, DataStatus, Item, ItemLink, ItemPhoto, ItemPriority, ItemReviewStatus, ItemStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: { value: ItemStatus; label: string }[] = [
   { value: "for_sale", label: "En venta" },
@@ -280,6 +282,8 @@ type FormState = {
   asking_price_override: string;
   status: ItemStatus;
   data_status: DataStatus | "";
+  priority: ItemPriority | "";
+  review_status: ItemReviewStatus;
 };
 
 function toFormState(item: Item): FormState {
@@ -308,6 +312,8 @@ function toFormState(item: Item): FormState {
     asking_price_override: item.asking_price_override != null ? String(item.asking_price_override) : "",
     status: item.status,
     data_status: item.data_status ?? "",
+    priority: item.priority ?? "",
+    review_status: item.review_status ?? "nuevo",
   };
 }
 
@@ -437,6 +443,8 @@ export default function ItemEditForm({ id }: { id: string }) {
         asking_price_override: numOrNull(form.asking_price_override),
         status: form.status,
         data_status: form.data_status || null,
+        priority: form.priority || null,
+        review_status: form.review_status,
       })
       .eq("id", id);
 
@@ -572,6 +580,12 @@ export default function ItemEditForm({ id }: { id: string }) {
           <FieldRow label="Nombre">
             <RowInput required value={form.name} onChange={(e) => set("name", e.target.value)} />
           </FieldRow>
+          {/* Server-generated on insert, immutable after (a DB trigger
+              rejects any UPDATE that touches it) — shown here so it can
+              be copied onto a sticker, never as an editable field. */}
+          <FieldRow label="Ref.">
+            <p className="text-right font-mono text-base tracking-wide text-ink">{item.ref_code ?? "—"}</p>
+          </FieldRow>
           <FieldRow label="Cantidad disponible">
             <RowInput
               type="number"
@@ -583,6 +597,25 @@ export default function ItemEditForm({ id }: { id: string }) {
           <FieldRow label="Estado">
             <RowSelect value={form.status} onChange={(e) => set("status", e.target.value as ItemStatus)}>
               {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </RowSelect>
+          </FieldRow>
+          <FieldRow label="Revisión">
+            <RowSelect value={form.review_status} onChange={(e) => set("review_status", e.target.value as ItemReviewStatus)}>
+              {REVIEW_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </RowSelect>
+          </FieldRow>
+          <FieldRow label="Prioridad">
+            <RowSelect value={form.priority} onChange={(e) => set("priority", e.target.value as FormState["priority"])}>
+              <option value="">Sin prioridad</option>
+              {PRIORITY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
