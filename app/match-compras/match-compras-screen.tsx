@@ -863,6 +863,27 @@ function SinRegistroSheet({
 // Buscar — free-text fallback over every gasto_line, not just the
 // precomputed candidate pool.
 // --------------------------------------------------------------------
+
+// "mercado libre" should find "Mercado Libre" AND "Libre Mercado" — word
+// order shouldn't matter for a loose keyword search, so each unquoted
+// word becomes its own independent substring requirement (ANDed via
+// PostgREST's own multi-filter-on-one-column semantics, confirmed to AND
+// rather than override). A "quoted phrase" opts back into a single
+// contiguous-substring match when the exact wording matters.
+function parseSearchTerms(raw: string): { phrases: string[]; words: string[] } {
+  const phrases: string[] = [];
+  const withoutPhrases = raw.replace(/"([^"]+)"/g, (_, phrase: string) => {
+    const trimmed = phrase.trim();
+    if (trimmed) phrases.push(trimmed);
+    return " ";
+  });
+  const words = withoutPhrases
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
+  return { phrases, words };
+}
+
 function BuscarSheet({
   supabase,
   onClose,
@@ -892,12 +913,11 @@ function BuscarSheet({
     let cancelled = false;
     const handle = setTimeout(async () => {
       const q = query.trim();
-      const { data } = await supabase
-        .from("gasto_lines")
-        .select(GASTO_LINE_FIELDS)
-        .ilike("descripcion", `%${q}%`)
-        .order("fecha_op", { ascending: false })
-        .limit(30);
+      const { phrases, words } = parseSearchTerms(q);
+      let request = supabase.from("gasto_lines").select(GASTO_LINE_FIELDS);
+      for (const phrase of phrases) request = request.ilike("descripcion", `%${phrase}%`);
+      for (const word of words) request = request.ilike("descripcion", `%${word}%`);
+      const { data } = await request.order("fecha_op", { ascending: false }).limit(30);
       if (!cancelled) {
         setResults((data ?? []) as unknown as GastoLine[]);
         setResultsForQuery(q);
@@ -922,7 +942,7 @@ function BuscarSheet({
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Descripción, proveedor..."
+          placeholder='Descripción, proveedor... o "texto exacto"'
           className="h-10 w-full rounded-md border border-line-strong px-3 text-sm"
         />
         <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
