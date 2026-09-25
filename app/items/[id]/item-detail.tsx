@@ -234,7 +234,7 @@ export default function ItemDetail({ id }: { id: string }) {
       )}
 
       {/* 4. Condition */}
-      {(item.condition_rating || item.years_in_use != null || item.condition_notes) && (
+      {(item.condition_rating || item.years_in_use != null || item.condition_notes || item.maintenance_notes) && (
         <div className="mt-5 space-y-3 border-t border-line px-3.5 pt-4">
           <SectionHeading>Estado del artículo</SectionHeading>
           <div className="flex flex-wrap items-center gap-3">
@@ -242,6 +242,12 @@ export default function ItemDetail({ id }: { id: string }) {
             {item.years_in_use != null && <span className="text-sm text-ink-soft">{item.years_in_use} años de uso</span>}
           </div>
           {item.condition_notes && <p className="text-sm whitespace-pre-wrap text-ink">{item.condition_notes}</p>}
+          {item.maintenance_notes && (
+            <div>
+              <p className="text-xs font-bold tracking-wide text-ink-soft uppercase">Mantenimiento</p>
+              <p className="mt-0.5 text-sm whitespace-pre-wrap text-ink">{item.maintenance_notes}</p>
+            </div>
+          )}
         </div>
       )}
 

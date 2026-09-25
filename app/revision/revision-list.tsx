@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Flag } from "lucide-react";
+import { ChevronDown, Flag, ImageOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
-import { getDisplayName } from "@/lib/items";
+import { formatDimensions, getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
 import ConditionBadge from "@/components/ConditionBadge";
 import StatusBadge from "@/components/StatusBadge";
@@ -19,6 +19,7 @@ import type { Item, DataStatus } from "@/lib/types";
 const AREA_ORDER = ["Cocina", "Piso", "Barra", "Panadería"];
 
 type Row = Item & {
+  photoUrl: string | null;
   photoCount: number;
   linkCount: number;
   notesRest: string | null;
@@ -56,29 +57,153 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
-function PriceStack({ item }: { item: Row }) {
-  const rows: [string, string][] = [];
-  if (item.purchase_price != null) rows.push(["Compra", formatCurrency(item.purchase_price)]);
-  if (item.reference_price != null) rows.push(["Referencia", formatCurrency(item.reference_price)]);
-  if (item.suggested_resale_price != null) rows.push(["Sugerido", formatCurrency(item.suggested_resale_price)]);
-  if (item.asking_price != null) rows.push(["Público", formatCurrency(item.asking_price)]);
-  if (rows.length === 0) return <span className="text-ink-faint">Sin precio</span>;
+function money(v: number | null): React.ReactNode {
+  return v != null ? formatCurrency(v) : <span className="text-ink-faint">—</span>;
+}
+
+function text(v: string | null): React.ReactNode {
+  return v ? v : <span className="text-ink-faint">—</span>;
+}
+
+// Signs a short-lived URL on demand, same as item-edit-form.tsx's
+// FacturaPdfUpload/item-detail.tsx's handleViewFactura — the
+// "item-documents" bucket is private, factura_pdf is a storage path,
+// not a fetchable URL.
+function FacturaPdfLink({ path }: { path: string | null }) {
+  const supabase = createClient();
+  const [opening, setOpening] = useState(false);
+  if (!path) return <span className="text-ink-faint">—</span>;
+
+  async function handleView() {
+    setOpening(true);
+    const { data } = await supabase.storage.from("item-documents").createSignedUrl(path!, 60);
+    setOpening(false);
+    if (data) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   return (
-    <div className="flex flex-col gap-0.5">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-3 whitespace-nowrap">
-          <span className="text-[11px] text-ink-faint">{label}</span>
-          <span className="text-[12px] font-medium text-ink [font-variant-numeric:tabular-nums]">{value}</span>
-        </div>
-      ))}
-      {item.discount_pct != null && (
-        <span className="self-end rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[10px] font-bold text-positive">
-          -{item.discount_pct}%
-        </span>
-      )}
-    </div>
+    <button type="button" onClick={handleView} disabled={opening} className="text-sm font-medium text-ink underline disabled:opacity-50">
+      {opening ? "Abriendo..." : "Ver PDF"}
+    </button>
   );
 }
+
+// Mirrors item-edit-form.tsx's own section grouping 1:1 (Encabezado /
+// Descripción / Estado del artículo / Precio, plus Fotos y referencias
+// for item_photos/item_links) — every toggleable column belongs to
+// exactly one of these, so turning a group off always corresponds to a
+// whole section of the edit form, not an arbitrary column subset.
+type GroupKey = "encabezado" | "descripcion" | "estado" | "precio" | "fotos";
+
+const GROUPS: { key: GroupKey; label: string }[] = [
+  { key: "encabezado", label: "Encabezado" },
+  { key: "descripcion", label: "Descripción" },
+  { key: "estado", label: "Estado del artículo" },
+  { key: "precio", label: "Precio" },
+  { key: "fotos", label: "Fotos y referencias" },
+];
+
+type ColumnDef = {
+  key: string;
+  group: GroupKey;
+  label: string;
+  render: (item: Row) => React.ReactNode;
+};
+
+const COLUMNS: ColumnDef[] = [
+  // Encabezado
+  { key: "quantity", group: "encabezado", label: "Cant.", render: (i) => <span className="[font-variant-numeric:tabular-nums]">{i.quantity}</span> },
+  { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} /> },
+  { key: "data_status", group: "encabezado", label: "Datos", render: (i) => dataStatusBadge(i.data_status) },
+  // Descripción
+  { key: "type", group: "descripcion", label: "Tipo", render: (i) => text(i.type) },
+  { key: "location", group: "descripcion", label: "Ubicación", render: (i) => text(i.location) },
+  { key: "brand", group: "descripcion", label: "Marca", render: (i) => text(i.brand) },
+  { key: "model", group: "descripcion", label: "Modelo", render: (i) => text(i.model) },
+  { key: "serial_number", group: "descripcion", label: "Serie", render: (i) => text(i.serial_number) },
+  { key: "dimensions", group: "descripcion", label: "Dimensiones", render: (i) => text(formatDimensions(i)) },
+  { key: "description", group: "descripcion", label: "Detalles", render: (i) => text(i.description) },
+  // Estado del artículo
+  {
+    key: "condition_rating",
+    group: "estado",
+    label: "Condición",
+    render: (i) => (i.condition_rating ? <ConditionBadge rating={i.condition_rating} /> : <span className="text-ink-faint">—</span>),
+  },
+  { key: "years_in_use", group: "estado", label: "Años", render: (i) => (i.years_in_use != null ? i.years_in_use : <span className="text-ink-faint">—</span>) },
+  {
+    key: "condition_notes",
+    group: "estado",
+    label: "Notas de condición",
+    render: (i) => (
+      <>
+        {text(i.notesRest)}
+        {i.revisar && (
+          <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-negative">
+            <Flag className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {i.revisar}
+          </span>
+        )}
+      </>
+    ),
+  },
+  { key: "maintenance_notes", group: "estado", label: "Notas de mantenimiento", render: (i) => text(i.maintenance_notes) },
+  // Precio
+  { key: "purchase_price", group: "precio", label: "Compra", render: (i) => money(i.purchase_price) },
+  { key: "reference_price", group: "precio", label: "Referencia", render: (i) => money(i.reference_price) },
+  { key: "suggested_resale_price", group: "precio", label: "Sugerido", render: (i) => money(i.suggested_resale_price) },
+  { key: "asking_price", group: "precio", label: "Público", render: (i) => money(i.asking_price) },
+  {
+    key: "discount_pct",
+    group: "precio",
+    label: "Descuento",
+    render: (i) =>
+      i.discount_pct != null ? (
+        <span className="rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-bold text-positive">-{i.discount_pct}%</span>
+      ) : (
+        <span className="text-ink-faint">—</span>
+      ),
+  },
+  {
+    key: "has_factura",
+    group: "precio",
+    label: "Factura",
+    render: (i) => (i.has_factura == null ? <span className="text-ink-faint">—</span> : i.has_factura ? "Sí" : "No"),
+  },
+  { key: "factura_cfdi", group: "precio", label: "CFDI", render: (i) => text(i.factura_cfdi) },
+  { key: "factura_pdf", group: "precio", label: "PDF", render: (i) => <FacturaPdfLink path={i.factura_pdf} /> },
+  // Fotos y referencias
+  {
+    key: "photos",
+    group: "fotos",
+    label: "Fotos",
+    render: (i) => (
+      <div className="flex items-center gap-1.5">
+        {i.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={i.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded border border-line object-cover" />
+        ) : (
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-page text-ink-faint">
+            <ImageOff className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        )}
+        <span className="rounded-full border border-line-strong bg-page px-1.5 py-0.5 text-[10px] font-bold text-ink-soft [font-variant-numeric:tabular-nums]">
+          {i.photoCount}
+        </span>
+      </div>
+    ),
+  },
+  {
+    key: "links",
+    group: "fotos",
+    label: "Refs",
+    render: (i) => (
+      <span className="rounded-full border border-line-strong bg-page px-1.5 py-0.5 text-[10px] font-bold text-ink-soft [font-variant-numeric:tabular-nums]">
+        {i.linkCount}
+      </span>
+    ),
+  },
+];
 
 export default function RevisionList() {
   const supabase = createClient();
@@ -90,6 +215,10 @@ export default function RevisionList() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // All five sections visible by default — "show every column", with the
+  // ability to shrink the table down to just the section(s) in question
+  // once it's clearly too wide to scan at once.
+  const [visibleGroups, setVisibleGroups] = useState<Set<GroupKey>>(new Set(GROUPS.map((g) => g.key)));
 
   // This screen shows unmasked admin data (purchase price, reference
   // price, suggested resale, CFDI, etc.) — a Viewer/Bidder session has
@@ -106,12 +235,13 @@ export default function RevisionList() {
     async function load() {
       setLoading(true);
       // items directly, not items_public — this screen IS the masked
-      // view's audience. Photo/link counts come from two flat id lists
-      // (both tables are tiny, no per-item count view exists for them)
-      // rather than an embedded count aggregate.
+      // view's audience. item_photos ordered by sort_order so [0] per
+      // item is always the primary photo (same convention as
+      // items-list.tsx). Link count is a flat id list — the table's
+      // tiny enough that no per-item count view exists for it.
       const [itemsRes, photosRes, linksRes] = await Promise.all([
         supabase.from("items").select("*"),
-        supabase.from("item_photos").select("item_id"),
+        supabase.from("item_photos").select("item_id, url").order("sort_order"),
         supabase.from("item_links").select("item_id"),
       ]);
       if (cancelled) return;
@@ -122,8 +252,10 @@ export default function RevisionList() {
         return;
       }
 
+      const photoUrls = new Map<string, string>();
       const photoCounts = new Map<string, number>();
       for (const row of photosRes.data ?? []) {
+        if (!photoUrls.has(row.item_id)) photoUrls.set(row.item_id, row.url);
         photoCounts.set(row.item_id, (photoCounts.get(row.item_id) ?? 0) + 1);
       }
       const linkCounts = new Map<string, number>();
@@ -135,6 +267,7 @@ export default function RevisionList() {
         const { rest, revisar } = extractRevisar(item.condition_notes);
         return {
           ...item,
+          photoUrl: photoUrls.get(item.id) ?? null,
           photoCount: photoCounts.get(item.id) ?? 0,
           linkCount: linkCounts.get(item.id) ?? 0,
           notesRest: rest,
@@ -184,6 +317,18 @@ export default function RevisionList() {
     setCollapsed((prev) => ({ ...prev, [area]: !prev[area] }));
   }
 
+  function toggleGroup(key: GroupKey) {
+    setVisibleGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const activeColumns = useMemo(() => COLUMNS.filter((c) => visibleGroups.has(c.group)), [visibleGroups]);
+  const tableMinWidth = 220 + activeColumns.length * 150 + 220;
+
   if (roleLoading || !role) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
 
   return (
@@ -214,6 +359,28 @@ export default function RevisionList() {
                 <p className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalFetched}</p>
                 <p className="text-xs text-ink-soft">Obtenidos (Claude)</p>
               </div>
+            </div>
+
+            {/* Global column-group toggles — the table gets very wide with
+                every section on, so these let the columns shrink down to
+                just the section(s) in question. Applies to every área's
+                table at once, since the sections are the same everywhere. */}
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {GROUPS.map((g) => {
+                const active = visibleGroups.has(g.key);
+                return (
+                  <button
+                    key={g.key}
+                    type="button"
+                    onClick={() => toggleGroup(g.key)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      active ? "border-ink bg-ink text-white" : "border-line-strong bg-card text-ink-soft"
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
             </div>
 
             {grouped.length === 0 ? (
@@ -250,20 +417,15 @@ export default function RevisionList() {
 
                     {!isCollapsed && (
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1400px] border-collapse">
+                        <table className="w-full border-collapse" style={{ minWidth: tableMinWidth }}>
                           <thead>
                             <tr className="border-b border-line bg-page/60 text-left text-[10px] font-bold tracking-wide text-ink-soft uppercase">
-                              <th className="px-2.5 py-2">Datos</th>
                               <th className="px-2.5 py-2">Artículo</th>
-                              <th className="px-2.5 py-2">Ubicación</th>
-                              <th className="px-2.5 py-2">Cant.</th>
-                              <th className="px-2.5 py-2">Serie</th>
-                              <th className="px-2.5 py-2">Condición</th>
-                              <th className="px-2.5 py-2">Años</th>
-                              <th className="px-2.5 py-2">Notas</th>
-                              <th className="px-2.5 py-2">Fotos/Refs</th>
-                              <th className="px-2.5 py-2">Precios</th>
-                              <th className="px-2.5 py-2">Venta</th>
+                              {activeColumns.map((c) => (
+                                <th key={c.key} className="px-2.5 py-2">
+                                  {c.label}
+                                </th>
+                              ))}
                               <th className="px-2.5 py-2">Actualizado</th>
                               <th className="px-2.5 py-2">Abrir</th>
                             </tr>
@@ -271,45 +433,17 @@ export default function RevisionList() {
                           <tbody>
                             {rows.map((item) => {
                               const displayName = getDisplayName(item);
-                              const identity = [item.brand, item.model].filter(Boolean).join(" · ");
                               return (
                                 <tr
                                   key={item.id}
                                   className={`border-b border-line text-sm last:border-0 ${item.revisar ? "bg-negative/5" : ""}`}
                                 >
-                                  <td className="px-2.5 py-2 align-top">{dataStatusBadge(item.data_status)}</td>
-                                  <td className="px-2.5 py-2 align-top">
-                                    <p className="font-semibold text-ink">{displayName}</p>
-                                    {identity && <p className="text-xs text-ink-soft">{identity}</p>}
-                                    {item.description && <p className="text-xs text-ink-soft">{item.description}</p>}
-                                  </td>
-                                  <td className="px-2.5 py-2 align-top text-ink">{item.location ?? <span className="text-ink-faint">—</span>}</td>
-                                  <td className="px-2.5 py-2 align-top text-ink [font-variant-numeric:tabular-nums]">{item.quantity}</td>
-                                  <td className="px-2.5 py-2 align-top text-ink">{item.serial_number ?? <span className="text-ink-faint">—</span>}</td>
-                                  <td className="px-2.5 py-2 align-top">
-                                    {item.condition_rating ? <ConditionBadge rating={item.condition_rating} /> : <span className="text-ink-faint">—</span>}
-                                  </td>
-                                  <td className="px-2.5 py-2 align-top text-ink [font-variant-numeric:tabular-nums]">
-                                    {item.years_in_use ?? <span className="text-ink-faint">—</span>}
-                                  </td>
-                                  <td className="max-w-[260px] px-2.5 py-2 align-top text-ink">
-                                    {item.notesRest ?? <span className="text-ink-faint">—</span>}
-                                    {item.revisar && (
-                                      <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-negative">
-                                        <Flag className="h-3 w-3 shrink-0" aria-hidden="true" />
-                                        {item.revisar}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-2.5 py-2 align-top text-ink [font-variant-numeric:tabular-nums] whitespace-nowrap">
-                                    {item.photoCount} f · {item.linkCount} r
-                                  </td>
-                                  <td className="px-2.5 py-2 align-top">
-                                    <PriceStack item={item} />
-                                  </td>
-                                  <td className="px-2.5 py-2 align-top">
-                                    <StatusBadge status={item.status} />
-                                  </td>
+                                  <td className="px-2.5 py-2 align-top font-semibold text-ink">{displayName}</td>
+                                  {activeColumns.map((c) => (
+                                    <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
+                                      {c.render(item)}
+                                    </td>
+                                  ))}
                                   <td className="px-2.5 py-2 align-top text-ink-faint [font-variant-numeric:tabular-nums] whitespace-nowrap">
                                     {fmtDate(item.updated_at)}
                                   </td>

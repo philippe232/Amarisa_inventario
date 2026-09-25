@@ -271,6 +271,7 @@ type FormState = {
   years_in_use: string;
   condition_rating: ConditionRating | "";
   condition_notes: string;
+  maintenance_notes: string;
   has_factura: "unknown" | "yes" | "no";
   factura_cfdi: string;
   purchase_price: string;
@@ -298,6 +299,7 @@ function toFormState(item: Item): FormState {
     years_in_use: item.years_in_use != null ? String(item.years_in_use) : "",
     condition_rating: item.condition_rating ?? "",
     condition_notes: item.condition_notes ?? "",
+    maintenance_notes: item.maintenance_notes ?? "",
     has_factura: item.has_factura == null ? "unknown" : item.has_factura ? "yes" : "no",
     factura_cfdi: item.factura_cfdi ?? "",
     purchase_price: item.purchase_price != null ? String(item.purchase_price) : "",
@@ -423,6 +425,7 @@ export default function ItemEditForm({ id }: { id: string }) {
         years_in_use: numOrNull(form.years_in_use),
         condition_rating: form.condition_rating || null,
         condition_notes: form.condition_notes || null,
+        maintenance_notes: form.maintenance_notes || null,
         has_factura: form.has_factura === "unknown" ? null : form.has_factura === "yes",
         factura_cfdi: form.factura_cfdi || null,
         // factura_pdf is NOT here — FacturaPdfUpload writes it directly
@@ -721,7 +724,7 @@ export default function ItemEditForm({ id }: { id: string }) {
           </FieldRow>
         </FieldGroup>
         <LabeledTextarea
-          label="Descripción"
+          label="Detalles"
           value={form.description}
           onChange={(e) => set("description", e.target.value)}
         />
@@ -754,9 +757,18 @@ export default function ItemEditForm({ id }: { id: string }) {
           </FieldRow>
         </FieldGroup>
         <LabeledTextarea
-          label="Notas de mantenimiento/servicio"
+          label="Notas de condición"
           value={form.condition_notes}
           onChange={(e) => set("condition_notes", e.target.value)}
+        />
+        {/* maintenance_notes (db/migrations/0001: "repair history, separate
+            from current condition") — a real column that had no home in
+            this form until now; condition_notes above is the current
+            state, this is what's been done to it over time. */}
+        <LabeledTextarea
+          label="Notas de mantenimiento"
+          value={form.maintenance_notes}
+          onChange={(e) => set("maintenance_notes", e.target.value)}
         />
       </section>
 
