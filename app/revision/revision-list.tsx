@@ -7,21 +7,31 @@ import { ChevronDown, Flag, ImageOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
-import { formatDimensions, getDisplayName } from "@/lib/items";
+import { getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
-import ConditionBadge from "@/components/ConditionBadge";
-import StatusBadge from "@/components/StatusBadge";
 import SearchFilterBar from "@/components/SearchFilterBar";
 import { CONDITION_OPTIONS } from "@/lib/condition";
 import { PRIORITY_OPTIONS } from "@/lib/priority";
 import { REVIEW_STATUS_OPTIONS } from "@/lib/review-status";
-import type { Item, DataStatus } from "@/lib/types";
+import type { Item } from "@/lib/types";
 
 // Best-to-worst / most-to-least-urgent / earliest-to-latest rank, not
 // alphabetical — same order each OPTIONS list is itself defined in.
 const CONDITION_RANK: Record<string, number> = Object.fromEntries(CONDITION_OPTIONS.map((o, idx) => [o.value, idx]));
 const PRIORITY_RANK: Record<string, number> = Object.fromEntries(PRIORITY_OPTIONS.map((o, idx) => [o.value, idx]));
 const REVIEW_STATUS_RANK: Record<string, number> = Object.fromEntries(REVIEW_STATUS_OPTIONS.map((o, idx) => [o.value, idx]));
+
+// Not shared via a lib file — same as item-edit-form.tsx's own local
+// STATUS_OPTIONS/DATA_STATUS_OPTIONS, which aren't either.
+const STATUS_OPTIONS = [
+  { value: "for_sale", label: "En venta" },
+  { value: "reserved", label: "Reservado" },
+  { value: "sold", label: "Vendido" },
+];
+const DATA_STATUS_OPTIONS = [
+  { value: "fetched", label: "Obtenido (Claude)" },
+  { value: "verified", label: "Verificado" },
+];
 
 type SortValue = string | number | null;
 type SortDir = "asc" | "desc";
@@ -34,35 +44,20 @@ type Row = Item & {
   photoUrl: string | null;
   photoCount: number;
   linkCount: number;
-  notesRest: string | null;
-  revisar: string | null;
 };
 
 // condition_notes carries an inline "[REVISAR: ...]" tag for anything
 // the September cleanup couldn't resolve on its own (see clean_inventory.py)
 // — split it out so it renders as its own flag instead of buried prose.
+// Computed live from the current condition_notes wherever it's needed
+// (not cached on the row), so editing the text updates the flag/count
+// everywhere immediately instead of going stale.
 function extractRevisar(notes: string | null): { rest: string | null; revisar: string | null } {
   if (!notes) return { rest: null, revisar: null };
   const match = notes.match(/\[REVISAR:\s*([^\]]+)\]/);
   if (!match) return { rest: notes, revisar: null };
   const rest = (notes.slice(0, match.index) + notes.slice(match.index! + match[0].length)).replace(/\s*\|\s*$/, "").trim();
   return { rest: rest || null, revisar: match[1].trim() };
-}
-
-function dataStatusBadge(status: DataStatus | null) {
-  if (status === "fetched")
-    return (
-      <span className="inline-flex items-center rounded-full border border-yellow/30 bg-yellow/10 px-2 py-0.5 text-[11px] font-bold text-yellow">
-        Obtenido
-      </span>
-    );
-  if (status === "verified")
-    return (
-      <span className="inline-flex items-center rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[11px] font-bold text-positive">
-        Verificado
-      </span>
-    );
-  return <span className="text-ink-faint">—</span>;
 }
 
 function fmtDate(iso: string): string {
@@ -73,14 +68,11 @@ function money(v: number | null): React.ReactNode {
   return v != null ? formatCurrency(v) : <span className="text-ink-faint">—</span>;
 }
 
-function text(v: string | null): React.ReactNode {
-  return v ? v : <span className="text-ink-faint">—</span>;
-}
-
 // Signs a short-lived URL on demand, same as item-edit-form.tsx's
 // FacturaPdfUpload/item-detail.tsx's handleViewFactura — the
 // "item-documents" bucket is private, factura_pdf is a storage path,
-// not a fetchable URL.
+// not a fetchable URL. View-only here on purpose (see COLUMNS' comment
+// on factura_pdf) — replacing the file still means the edit form.
 function FacturaPdfLink({ path }: { path: string | null }) {
   const supabase = createClient();
   const [opening, setOpening] = useState(false);
@@ -97,6 +89,80 @@ function FacturaPdfLink({ path }: { path: string | null }) {
     <button type="button" onClick={handleView} disabled={opening} className="text-sm font-medium text-ink underline disabled:opacity-50">
       {opening ? "Abriendo..." : "Ver PDF"}
     </button>
+  );
+}
+
+const inlineInputClass =
+  "w-full min-w-[90px] rounded border border-transparent bg-transparent px-1.5 py-1 text-xs text-ink hover:border-line-strong focus:border-line-strong focus:bg-card focus:outline-none";
+const inlineSelectClass = "rounded border border-line-strong bg-card px-1.5 py-1 text-xs text-ink";
+
+// Every free-text/number cell shares this shape: local typing state so
+// keystrokes don't hit the network, committed onBlur only if the value
+// actually changed. `value` re-syncs local state whenever the
+// underlying row value changes (a successful commit, a revert after a
+// failed write, or someone else's edit landing after a reload).
+function InlineText({
+  value,
+  onCommit,
+  className = "",
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  className?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  // "Adjusting state when a prop changes", not a synchronization effect
+  // — setState during render (React's own documented pattern for this)
+  // instead of useEffect, so a resync never costs an extra render pass.
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(value);
+  }
+  return (
+    <input
+      type="text"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onCommit(local);
+      }}
+      className={`${inlineInputClass} ${className}`}
+    />
+  );
+}
+
+function InlineNumber({
+  value,
+  onCommit,
+  step,
+  min,
+  className = "",
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  step?: string;
+  min?: string;
+  className?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(value);
+  }
+  return (
+    <input
+      type="number"
+      value={local}
+      step={step}
+      min={min}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onCommit(local);
+      }}
+      className={`${inlineInputClass} [font-variant-numeric:tabular-nums] ${className}`}
+    />
   );
 }
 
@@ -117,52 +183,20 @@ const GROUPS: { key: GroupKey; label: string }[] = [
   { key: "fotos", label: "Fotos y referencias" },
 ];
 
-// review_status/priority write straight back to the DB on change (same
-// immediate-write pattern as PhotoManager/FacturaPdfUpload elsewhere in
-// this app) — every other column here is read-only, so only those two
-// render functions actually use this second argument.
-type UpdateFieldFn = (itemId: string, field: "review_status" | "priority", value: string | null) => void;
+// Every editable column writes through this one function: optimistic
+// update, then the actual write, reverted (with a visible error) if it
+// fails. Immediate-commit controls (selects) call it straight from
+// onChange; free-text/number cells call it from InlineText/InlineNumber's
+// onBlur instead, so typing itself never hits the network.
+type WriteFieldFn = (itemId: string, field: string, value: unknown, revertValue: unknown) => void;
 
 type ColumnDef = {
   key: string;
   group: GroupKey;
   label: string;
-  render: (item: Row, updateField: UpdateFieldFn) => React.ReactNode;
+  render: (item: Row, writeField: WriteFieldFn) => React.ReactNode;
   sortValue: (item: Row) => SortValue;
 };
-
-function ReviewStatusSelect({ item, onChange }: { item: Row; onChange: (value: string) => void }) {
-  return (
-    <select
-      value={item.review_status ?? "nuevo"}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-line-strong bg-card px-1.5 py-1 text-xs text-ink"
-    >
-      {REVIEW_STATUS_OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function PrioritySelect({ item, onChange }: { item: Row; onChange: (value: string) => void }) {
-  return (
-    <select
-      value={item.priority ?? ""}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded border border-line-strong bg-card px-1.5 py-1 text-xs text-ink"
-    >
-      <option value="">Sin prioridad</option>
-      {PRIORITY_OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 const COLUMNS: ColumnDef[] = [
   // Encabezado
@@ -170,15 +204,53 @@ const COLUMNS: ColumnDef[] = [
     key: "quantity",
     group: "encabezado",
     label: "Cant.",
-    render: (i) => <span className="[font-variant-numeric:tabular-nums]">{i.quantity}</span>,
+    render: (i, writeField) => (
+      <InlineNumber
+        value={String(i.quantity)}
+        min="1"
+        className="w-14"
+        onCommit={(v) => writeField(i.id, "quantity", Math.max(1, Number(v) || 1), i.quantity)}
+      />
+    ),
     sortValue: (i) => i.quantity,
   },
-  { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} />, sortValue: (i) => i.status },
+  {
+    key: "status",
+    group: "encabezado",
+    label: "Venta",
+    render: (i, writeField) => (
+      <select
+        value={i.status}
+        onChange={(e) => writeField(i.id, "status", e.target.value, i.status)}
+        className={inlineSelectClass}
+      >
+        {STATUS_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ),
+    sortValue: (i) => i.status,
+  },
   {
     key: "data_status",
     group: "encabezado",
     label: "Datos",
-    render: (i) => dataStatusBadge(i.data_status),
+    render: (i, writeField) => (
+      <select
+        value={i.data_status ?? ""}
+        onChange={(e) => writeField(i.id, "data_status", e.target.value || null, i.data_status)}
+        className={inlineSelectClass}
+      >
+        <option value="">Sin dato</option>
+        {DATA_STATUS_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ),
     sortValue: (i) => i.data_status,
   },
   // Procesamiento — internal triage, not about what the article IS.
@@ -186,94 +258,290 @@ const COLUMNS: ColumnDef[] = [
     key: "review_status",
     group: "procesamiento",
     label: "Revisión",
-    render: (i, updateField) => <ReviewStatusSelect item={i} onChange={(v) => updateField(i.id, "review_status", v)} />,
+    render: (i, writeField) => (
+      <select
+        value={i.review_status ?? "nuevo"}
+        onChange={(e) => writeField(i.id, "review_status", e.target.value, i.review_status)}
+        className={inlineSelectClass}
+      >
+        {REVIEW_STATUS_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ),
     sortValue: (i) => (i.review_status ? REVIEW_STATUS_RANK[i.review_status] : null),
   },
   {
     key: "priority",
     group: "procesamiento",
     label: "Prioridad",
-    render: (i, updateField) => <PrioritySelect item={i} onChange={(v) => updateField(i.id, "priority", v || null)} />,
+    render: (i, writeField) => (
+      <select
+        value={i.priority ?? ""}
+        onChange={(e) => writeField(i.id, "priority", e.target.value || null, i.priority)}
+        className={inlineSelectClass}
+      >
+        <option value="">Sin prioridad</option>
+        {PRIORITY_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ),
     sortValue: (i) => (i.priority ? PRIORITY_RANK[i.priority] : null),
   },
   {
     key: "internal_notes",
     group: "procesamiento",
     label: "Notas",
-    render: (i) => text(i.internal_notes),
+    render: (i, writeField) => (
+      <InlineText value={i.internal_notes ?? ""} onCommit={(v) => writeField(i.id, "internal_notes", v.trim() || null, i.internal_notes)} />
+    ),
     sortValue: (i) => i.internal_notes,
   },
   // Descripción
-  { key: "type", group: "descripcion", label: "Tipo", render: (i) => text(i.type), sortValue: (i) => i.type },
-  { key: "location", group: "descripcion", label: "Ubicación", render: (i) => text(i.location), sortValue: (i) => i.location },
-  { key: "brand", group: "descripcion", label: "Marca", render: (i) => text(i.brand), sortValue: (i) => i.brand },
-  { key: "model", group: "descripcion", label: "Modelo", render: (i) => text(i.model), sortValue: (i) => i.model },
-  { key: "serial_number", group: "descripcion", label: "Serie", render: (i) => text(i.serial_number), sortValue: (i) => i.serial_number },
+  {
+    key: "type",
+    group: "descripcion",
+    label: "Tipo",
+    render: (i, writeField) => <InlineText value={i.type ?? ""} onCommit={(v) => writeField(i.id, "type", v.trim() || null, i.type)} />,
+    sortValue: (i) => i.type,
+  },
+  {
+    key: "location",
+    group: "descripcion",
+    label: "Ubicación",
+    render: (i, writeField) => (
+      <InlineText value={i.location ?? ""} onCommit={(v) => writeField(i.id, "location", v.trim() || null, i.location)} />
+    ),
+    sortValue: (i) => i.location,
+  },
+  {
+    key: "brand",
+    group: "descripcion",
+    label: "Marca",
+    render: (i, writeField) => <InlineText value={i.brand ?? ""} onCommit={(v) => writeField(i.id, "brand", v.trim() || null, i.brand)} />,
+    sortValue: (i) => i.brand,
+  },
+  {
+    key: "model",
+    group: "descripcion",
+    label: "Modelo",
+    render: (i, writeField) => <InlineText value={i.model ?? ""} onCommit={(v) => writeField(i.id, "model", v.trim() || null, i.model)} />,
+    sortValue: (i) => i.model,
+  },
+  {
+    key: "serial_number",
+    group: "descripcion",
+    label: "Serie",
+    render: (i, writeField) => (
+      <InlineText value={i.serial_number ?? ""} onCommit={(v) => writeField(i.id, "serial_number", v.trim() || null, i.serial_number)} />
+    ),
+    sortValue: (i) => i.serial_number,
+  },
   {
     key: "dimensions",
     group: "descripcion",
     label: "Dimensiones",
-    render: (i) => text(formatDimensions(i)),
-    sortValue: (i) => formatDimensions(i),
+    render: (i, writeField) => (
+      <div className="flex items-center gap-1">
+        <InlineNumber
+          value={i.height_cm != null ? String(i.height_cm) : ""}
+          step="0.1"
+          min="0"
+          className="w-12"
+          onCommit={(v) => writeField(i.id, "height_cm", v.trim() === "" ? null : Number(v), i.height_cm)}
+        />
+        <span className="text-ink-faint">×</span>
+        <InlineNumber
+          value={i.width_cm != null ? String(i.width_cm) : ""}
+          step="0.1"
+          min="0"
+          className="w-12"
+          onCommit={(v) => writeField(i.id, "width_cm", v.trim() === "" ? null : Number(v), i.width_cm)}
+        />
+        <span className="text-ink-faint">×</span>
+        <InlineNumber
+          value={i.length_cm != null ? String(i.length_cm) : ""}
+          step="0.1"
+          min="0"
+          className="w-12"
+          onCommit={(v) => writeField(i.id, "length_cm", v.trim() === "" ? null : Number(v), i.length_cm)}
+        />
+      </div>
+    ),
+    sortValue: (i) => i.height_cm,
   },
-  { key: "description", group: "descripcion", label: "Detalles", render: (i) => text(i.description), sortValue: (i) => i.description },
+  {
+    key: "description",
+    group: "descripcion",
+    label: "Detalles",
+    render: (i, writeField) => (
+      <InlineText value={i.description ?? ""} onCommit={(v) => writeField(i.id, "description", v.trim() || null, i.description)} />
+    ),
+    sortValue: (i) => i.description,
+  },
   // Estado del artículo
   {
     key: "condition_rating",
     group: "estado",
     label: "Condición",
-    render: (i) => (i.condition_rating ? <ConditionBadge rating={i.condition_rating} /> : <span className="text-ink-faint">—</span>),
+    render: (i, writeField) => (
+      <select
+        value={i.condition_rating ?? ""}
+        onChange={(e) => writeField(i.id, "condition_rating", e.target.value || null, i.condition_rating)}
+        className={inlineSelectClass}
+      >
+        <option value="">Sin dato</option>
+        {CONDITION_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ),
     sortValue: (i) => (i.condition_rating ? CONDITION_RANK[i.condition_rating] : null),
   },
   {
     key: "years_in_use",
     group: "estado",
     label: "Años",
-    render: (i) => (i.years_in_use != null ? i.years_in_use : <span className="text-ink-faint">—</span>),
+    render: (i, writeField) => (
+      <InlineNumber
+        value={i.years_in_use != null ? String(i.years_in_use) : ""}
+        step="0.1"
+        min="0"
+        className="w-14"
+        onCommit={(v) => writeField(i.id, "years_in_use", v.trim() === "" ? null : Number(v), i.years_in_use)}
+      />
+    ),
     sortValue: (i) => i.years_in_use,
   },
   {
     key: "condition_notes",
     group: "estado",
     label: "Notas de condición",
-    render: (i) => (
-      <>
-        {text(i.notesRest)}
-        {i.revisar && (
-          <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-negative">
-            <Flag className="h-3 w-3 shrink-0" aria-hidden="true" />
-            {i.revisar}
-          </span>
-        )}
-      </>
-    ),
-    sortValue: (i) => i.notesRest,
+    render: (i, writeField) => {
+      const { revisar } = extractRevisar(i.condition_notes);
+      return (
+        <>
+          <InlineText
+            value={i.condition_notes ?? ""}
+            onCommit={(v) => writeField(i.id, "condition_notes", v.trim() || null, i.condition_notes)}
+          />
+          {revisar && (
+            <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-negative">
+              <Flag className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {revisar}
+            </span>
+          )}
+        </>
+      );
+    },
+    sortValue: (i) => extractRevisar(i.condition_notes).rest,
   },
   {
     key: "maintenance_notes",
     group: "estado",
     label: "Notas de mantenimiento",
-    render: (i) => text(i.maintenance_notes),
+    render: (i, writeField) => (
+      <InlineText
+        value={i.maintenance_notes ?? ""}
+        onCommit={(v) => writeField(i.id, "maintenance_notes", v.trim() || null, i.maintenance_notes)}
+      />
+    ),
     sortValue: (i) => i.maintenance_notes,
   },
   // Precio
-  { key: "purchase_price", group: "precio", label: "Compra", render: (i) => money(i.purchase_price), sortValue: (i) => i.purchase_price },
-  { key: "reference_price", group: "precio", label: "Referencia", render: (i) => money(i.reference_price), sortValue: (i) => i.reference_price },
+  {
+    key: "purchase_price",
+    group: "precio",
+    label: "Compra",
+    render: (i, writeField) => (
+      <InlineNumber
+        value={i.purchase_price != null ? String(i.purchase_price) : ""}
+        step="0.01"
+        min="0"
+        className="w-20"
+        onCommit={(v) => writeField(i.id, "purchase_price", v.trim() === "" ? null : Number(v), i.purchase_price)}
+      />
+    ),
+    sortValue: (i) => i.purchase_price,
+  },
+  {
+    key: "reference_price",
+    group: "precio",
+    label: "Referencia",
+    render: (i, writeField) => (
+      <InlineNumber
+        value={i.reference_price != null ? String(i.reference_price) : ""}
+        step="0.01"
+        min="0"
+        className="w-20"
+        onCommit={(v) => writeField(i.id, "reference_price", v.trim() === "" ? null : Number(v), i.reference_price)}
+      />
+    ),
+    sortValue: (i) => i.reference_price,
+  },
   {
     key: "suggested_resale_price",
     group: "precio",
     label: "Sugerido",
-    render: (i) => money(i.suggested_resale_price),
+    render: (i, writeField) => (
+      <InlineNumber
+        value={i.suggested_resale_price != null ? String(i.suggested_resale_price) : ""}
+        step="0.01"
+        min="0"
+        className="w-20"
+        onCommit={(v) => writeField(i.id, "suggested_resale_price", v.trim() === "" ? null : Number(v), i.suggested_resale_price)}
+      />
+    ),
     sortValue: (i) => i.suggested_resale_price,
   },
-  { key: "asking_price", group: "precio", label: "Público", render: (i) => money(i.asking_price), sortValue: (i) => i.asking_price },
   {
+    key: "asking_price_override",
+    group: "precio",
+    label: "Venta (override)",
+    render: (i, writeField) => (
+      <InlineNumber
+        value={i.asking_price_override != null ? String(i.asking_price_override) : ""}
+        step="0.01"
+        min="0"
+        className="w-20"
+        onCommit={(v) => writeField(i.id, "asking_price_override", v.trim() === "" ? null : Number(v), i.asking_price_override)}
+      />
+    ),
+    sortValue: (i) => i.asking_price_override,
+  },
+  {
+    // Generated column ("asking_price_override if set, else
+    // suggested_resale_price" — db/migrations/0006) — Postgres itself
+    // rejects a direct UPDATE to it, so it stays read-only here on
+    // purpose. Edit "Venta (override)" or "Sugerido" instead.
+    key: "asking_price",
+    group: "precio",
+    label: "Público",
+    render: (i) => (
+      <span title="Calculado: anula el sugerido si hay un precio de venta capturado.">{money(i.asking_price)}</span>
+    ),
+    sortValue: (i) => i.asking_price,
+  },
+  {
+    // Also generated (db/migrations/0009) — same reasoning as asking_price.
     key: "discount_pct",
     group: "precio",
     label: "Descuento",
     render: (i) =>
       i.discount_pct != null ? (
-        <span className="rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-bold text-positive">-{i.discount_pct}%</span>
+        <span
+          title="Calculado a partir de compra/referencia y el precio público."
+          className="rounded-full border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-bold text-positive"
+        >
+          -{i.discount_pct}%
+        </span>
       ) : (
         <span className="text-ink-faint">—</span>
       ),
@@ -283,18 +551,42 @@ const COLUMNS: ColumnDef[] = [
     key: "has_factura",
     group: "precio",
     label: "Factura",
-    render: (i) => (i.has_factura == null ? <span className="text-ink-faint">—</span> : i.has_factura ? "Sí" : "No"),
+    render: (i, writeField) => (
+      <select
+        value={i.has_factura == null ? "" : i.has_factura ? "yes" : "no"}
+        onChange={(e) => writeField(i.id, "has_factura", e.target.value === "" ? null : e.target.value === "yes", i.has_factura)}
+        className={inlineSelectClass}
+      >
+        <option value="">Sin dato</option>
+        <option value="yes">Sí</option>
+        <option value="no">No</option>
+      </select>
+    ),
     sortValue: (i) => (i.has_factura == null ? null : i.has_factura ? 1 : 0),
   },
-  { key: "factura_cfdi", group: "precio", label: "CFDI", render: (i) => text(i.factura_cfdi), sortValue: (i) => i.factura_cfdi },
   {
+    key: "factura_cfdi",
+    group: "precio",
+    label: "CFDI",
+    render: (i, writeField) => (
+      <InlineText value={i.factura_cfdi ?? ""} onCommit={(v) => writeField(i.id, "factura_cfdi", v.trim() || null, i.factura_cfdi)} />
+    ),
+    sortValue: (i) => i.factura_cfdi,
+  },
+  {
+    // Uploading/replacing a file needs a real file picker — not a cell
+    // a person can type into. View-only here; the edit form's Factura
+    // (PDF) field is still where you swap the file itself.
     key: "factura_pdf",
     group: "precio",
     label: "PDF",
     render: (i) => <FacturaPdfLink path={i.factura_pdf} />,
     sortValue: (i) => (i.factura_pdf ? 1 : 0),
   },
-  // Fotos y referencias
+  // Fotos y referencias — both represent a collection of rows (many
+  // photos/links per item), not a single scalar value, so neither is a
+  // cell someone can type a new value into. Managing them (add/remove/
+  // reorder) still means the edit form's PhotoManager/Referencias.
   {
     key: "photos",
     group: "fotos",
@@ -330,11 +622,14 @@ const COLUMNS: ColumnDef[] = [
 ];
 
 // The pinned columns (always shown, outside the group-toggle system)
-// are sortable too — same {key,label,sortValue} shape as COLUMNS, just
-// rendered/positioned separately since they frame the table rather
-// than belonging to a section. ref_code sits right after the name —
-// it's the sticker code, an identity field like the name itself, not
-// something that should disappear when Encabezado is toggled off.
+// are sortable too. ref_code and updated_at are the two deliberate
+// exceptions to "everything is editable": ref_code is enforced
+// immutable by a DB trigger (it's a physical sticker already written),
+// and updated_at is overwritten to now() by a trigger on every save
+// regardless of what's sent, so offering an input for it would just be
+// a lie. Artículo is bound to the raw `name` (not getDisplayName's
+// brand+model fallback) since that's the field actually being edited —
+// Marca/Modelo are their own columns right there in Descripción.
 const PINNED_START = { key: "name", label: "Artículo", sortValue: (i: Row) => getDisplayName(i) };
 const PINNED_REF = { key: "ref_code", label: "Ref.", sortValue: (i: Row) => i.ref_code };
 const PINNED_END = { key: "updated_at", label: "Actualizado", sortValue: (i: Row) => i.updated_at };
@@ -393,7 +688,7 @@ export default function RevisionList() {
   // rendered as separate <table>s and there's no reason picking a sort
   // for Cocina should touch Piso's.
   const [sortState, setSortState] = useState<Record<string, { key: string; dir: SortDir }>>({});
-  // All five sections visible by default — "show every column", with the
+  // All six sections visible by default — "show every column", with the
   // ability to shrink the table down to just the section(s) in question
   // once it's clearly too wide to scan at once.
   const [visibleGroups, setVisibleGroups] = useState<Set<GroupKey>>(new Set(GROUPS.map((g) => g.key)));
@@ -441,17 +736,12 @@ export default function RevisionList() {
         linkCounts.set(row.item_id, (linkCounts.get(row.item_id) ?? 0) + 1);
       }
 
-      const rows: Row[] = (itemsRes.data as Item[]).map((item) => {
-        const { rest, revisar } = extractRevisar(item.condition_notes);
-        return {
-          ...item,
-          photoUrl: photoUrls.get(item.id) ?? null,
-          photoCount: photoCounts.get(item.id) ?? 0,
-          linkCount: linkCounts.get(item.id) ?? 0,
-          notesRest: rest,
-          revisar,
-        };
-      });
+      const rows: Row[] = (itemsRes.data as Item[]).map((item) => ({
+        ...item,
+        photoUrl: photoUrls.get(item.id) ?? null,
+        photoCount: photoCounts.get(item.id) ?? 0,
+        linkCount: linkCounts.get(item.id) ?? 0,
+      }));
       setItems(rows);
       setError(null);
       setLoading(false);
@@ -463,7 +753,7 @@ export default function RevisionList() {
     };
   }, [supabase, role]);
 
-  const totalRevisar = useMemo(() => items.filter((i) => i.revisar).length, [items]);
+  const totalRevisar = useMemo(() => items.filter((i) => extractRevisar(i.condition_notes).revisar).length, [items]);
   const totalNoPhoto = useMemo(() => items.filter((i) => i.photoCount === 0).length, [items]);
   const totalFetched = useMemo(() => items.filter((i) => i.data_status === "fetched").length, [items]);
   const totalNuevo = useMemo(() => items.filter((i) => (i.review_status ?? "nuevo") === "nuevo").length, [items]);
@@ -499,14 +789,13 @@ export default function RevisionList() {
   }
 
   // Writes straight to the DB (same immediate-write pattern as
-  // PhotoManager/FacturaPdfUpload) — optimistic update first so the
-  // select reflects the change instantly, reverted if the write fails.
-  const updateField: UpdateFieldFn = async (itemId, field, value) => {
-    const prev = items;
+  // PhotoManager/FacturaPdfUpload) — optimistic update first, reverted
+  // (with a visible error banner) if the write fails.
+  const writeField: WriteFieldFn = async (itemId, field, value, revertValue) => {
     setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: value } : i)));
     const { error: updateError } = await supabase.from("items").update({ [field]: value }).eq("id", itemId);
     if (updateError) {
-      setItems(prev);
+      setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: revertValue } : i)));
       setSaveError(updateError.message);
     }
   };
@@ -574,8 +863,8 @@ export default function RevisionList() {
                 <p className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalFetched}</p>
                 <p className="text-xs text-ink-soft">Obtenidos (Claude)</p>
               </div>
-              {/* Same three-way split as review_status/ReviewStatusBadge:
-                  neutral (untouched) -> yellow (in progress) -> positive
+              {/* Same three-way split as review_status: neutral
+                  (untouched) -> yellow (in progress) -> positive
                   (cleared). */}
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-neutral [font-variant-numeric:tabular-nums]">{totalNuevo}</p>
@@ -619,7 +908,7 @@ export default function RevisionList() {
               grouped.map(({ area, rows, total }) => {
                 const forcedOpen = search.trim().length > 0;
                 const isCollapsed = !forcedOpen && collapsed[area];
-                const revisarCount = rows.filter((r) => r.revisar).length;
+                const revisarCount = rows.filter((r) => extractRevisar(r.condition_notes).revisar).length;
 
                 return (
                   <div key={area} className="mb-3 overflow-hidden rounded-md border border-line bg-card">
@@ -686,20 +975,28 @@ export default function RevisionList() {
                           </thead>
                           <tbody>
                             {sortRows(rows, area).map((item) => {
-                              const displayName = getDisplayName(item);
+                              const revisar = extractRevisar(item.condition_notes).revisar;
                               return (
-                                <tr
-                                  key={item.id}
-                                  className={`border-b border-line text-sm last:border-0 ${item.revisar ? "bg-negative/5" : ""}`}
-                                >
-                                  <td className="px-2.5 py-2 align-top font-semibold text-ink">{displayName}</td>
-                                  <td className="px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft">{item.ref_code ?? "—"}</td>
+                                <tr key={item.id} className={`border-b border-line text-sm last:border-0 ${revisar ? "bg-negative/5" : ""}`}>
+                                  <td className="px-2.5 py-2 align-top font-semibold text-ink">
+                                    <InlineText
+                                      value={item.name}
+                                      className="font-semibold"
+                                      onCommit={(v) => writeField(item.id, "name", v.trim() || item.name, item.name)}
+                                    />
+                                  </td>
+                                  <td className="px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft" title="No se puede modificar">
+                                    {item.ref_code ?? "—"}
+                                  </td>
                                   {activeColumns.map((c) => (
                                     <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
-                                      {c.render(item, updateField)}
+                                      {c.render(item, writeField)}
                                     </td>
                                   ))}
-                                  <td className="px-2.5 py-2 align-top text-ink-faint [font-variant-numeric:tabular-nums] whitespace-nowrap">
+                                  <td
+                                    className="px-2.5 py-2 align-top text-ink-faint [font-variant-numeric:tabular-nums] whitespace-nowrap"
+                                    title="Se actualiza sola al guardar cualquier cambio"
+                                  >
                                     {fmtDate(item.updated_at)}
                                   </td>
                                   <td className="px-2.5 py-2 align-top">
