@@ -228,16 +228,45 @@ export default function MatchComprasScreen() {
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, ...itemPatch } : i)));
   }
 
+  // "Descartar" — this candidate is definitely not the purchase for this
+  // item. Removes it from item_match_candidates right away (so it's just
+  // gone, not merely hidden) and records the exclusion in
+  // item_candidate_rejections so a future Recalcular never re-suggests
+  // it, even though that table's own rows get freely deleted/reinserted
+  // on every recompute.
+  async function handleReject(itemId: string, candidate: ItemMatchCandidate) {
+    setCandidatesByItem((prev) => {
+      const next = new Map(prev);
+      next.set(itemId, (next.get(itemId) ?? []).filter((c) => c.id !== candidate.id));
+      return next;
+    });
+
+    const [{ error: deleteError }, { error: insertError }] = await Promise.all([
+      supabase.from("item_match_candidates").delete().eq("id", candidate.id),
+      supabase.from("item_candidate_rejections").insert({ item_id: itemId, uid_itemc: candidate.uid_itemc, rejected_by: email }),
+    ]);
+    if (deleteError || insertError) {
+      setError(deleteError?.message ?? insertError?.message ?? "No se pudo descartar");
+    }
+  }
+
   // --- recalculate (browser-side, skips confirmado items) ------------
   async function handleRecalculate() {
     setRecalculating(true);
     setError(null);
     try {
-      const { data: lines, error: linesError } = await supabase
-        .from("gasto_lines")
-        .select("uid_itemc, descripcion, locacion, area, precio_por_ud, uds, total_neto")
-        .eq("is_candidate", true);
+      const [{ data: lines, error: linesError }, { data: rejections, error: rejectionsError }] = await Promise.all([
+        supabase.from("gasto_lines").select("uid_itemc, descripcion, locacion, area, precio_por_ud, uds, total_neto").eq("is_candidate", true),
+        supabase.from("item_candidate_rejections").select("item_id, uid_itemc"),
+      ]);
       if (linesError || !lines) throw new Error(linesError?.message ?? "Error");
+      if (rejectionsError) throw new Error(rejectionsError.message);
+
+      const rejectedByItem = new Map<string, Set<string>>();
+      for (const r of rejections ?? []) {
+        if (!rejectedByItem.has(r.item_id)) rejectedByItem.set(r.item_id, new Set());
+        rejectedByItem.get(r.item_id)!.add(r.uid_itemc);
+      }
 
       const confirmedIds = new Set([...activeMatchByItem.entries()].filter(([, m]) => m.status === "confirmado").map(([id]) => id));
       const toScore = items.filter((i) => !confirmedIds.has(i.id));
@@ -245,7 +274,9 @@ export default function MatchComprasScreen() {
       const newRows: Record<string, unknown>[] = [];
       const newByItem = new Map(candidatesByItem);
       for (const item of toScore) {
-        const ranked = rankCandidatesForItem(item, lines as GastoLine[], 10) as RankedCandidate[];
+        const rejected = rejectedByItem.get(item.id);
+        const pool = rejected ? (lines as GastoLine[]).filter((l) => !rejected.has(l.uid_itemc)) : (lines as GastoLine[]);
+        const ranked = rankCandidatesForItem(item, pool, 10) as RankedCandidate[];
         newByItem.set(
           item.id,
           ranked.map((r) => ({ ...r, item_id: item.id })) as unknown as ItemMatchCandidate[],
@@ -366,8 +397,10 @@ export default function MatchComprasScreen() {
       {loading ? (
         <p className="p-4 text-sm text-ink-soft">Cargando...</p>
       ) : (
-        <div className="md:grid md:grid-cols-[360px_1fr] md:gap-4 md:px-3.5">
-          <div className={`${selectedItemId ? "hidden md:block" : ""} space-y-1.5 px-3.5 md:px-0`}>
+        <div className="md:grid md:grid-cols-[360px_1fr] md:items-start md:gap-4 md:px-3.5">
+          <div
+            className={`${selectedItemId ? "hidden md:block" : ""} space-y-1.5 px-3.5 md:overflow-y-auto md:px-0 md:[height:calc(100dvh-220px)]`}
+          >
             {filteredItems.map((item) => {
               const tier = itemTier(item.id);
               const status = itemStatus(item.id);
@@ -400,7 +433,9 @@ export default function MatchComprasScreen() {
             {filteredItems.length === 0 && <p className="p-4 text-sm text-ink-soft">Sin artículos.</p>}
           </div>
 
-          <div className={`${selectedItemId ? "" : "hidden md:block"} px-3.5 md:px-0`}>
+          <div
+            className={`${selectedItemId ? "" : "hidden md:block"} px-3.5 md:overflow-y-auto md:px-0 md:[height:calc(100dvh-220px)]`}
+          >
             {selectedItem ? (
               <ItemDetailPanel
                 key={selectedItem.id}
@@ -410,6 +445,7 @@ export default function MatchComprasScreen() {
                 usedByCount={usedByCount}
                 onBack={() => setSelectedItemId(null)}
                 onSave={saveMatch}
+                onReject={handleReject}
                 supabase={supabase}
               />
             ) : (
@@ -433,6 +469,7 @@ function ItemDetailPanel({
   usedByCount,
   onBack,
   onSave,
+  onReject,
   supabase,
 }: {
   item: QueueItem;
@@ -441,6 +478,7 @@ function ItemDetailPanel({
   usedByCount: Map<string, number>;
   onBack: () => void;
   onSave: (itemId: string, patch: Omit<ItemPurchaseMatch, "id" | "item_id" | "is_active" | "reviewed_by" | "reviewed_at">) => Promise<void>;
+  onReject: (itemId: string, candidate: ItemMatchCandidate) => Promise<void>;
   supabase: ReturnType<typeof createClient>;
 }) {
   const [confirming, setConfirming] = useState<GastoLine | null>(null);
@@ -503,6 +541,7 @@ function ItemDetailPanel({
               line={c.gasto_lines}
               usedBy={usedByCount.get(c.uid_itemc) ?? 0}
               onElegir={() => setConfirming(c.gasto_lines)}
+              onDescartar={() => onReject(item.id, c)}
             />
           ) : null,
         )}
@@ -559,11 +598,13 @@ function CandidateCard({
   line,
   usedBy,
   onElegir,
+  onDescartar,
 }: {
   candidate: ItemMatchCandidate;
   line: GastoLine;
   usedBy: number;
   onElegir: () => void;
+  onDescartar: () => void;
 }) {
   const nota = line.gasto_notas;
   return (
@@ -592,13 +633,22 @@ function CandidateCard({
         )}
         {usedBy > 0 && <span>Usado por {usedBy} artículo(s)</span>}
       </div>
-      <button
-        type="button"
-        onClick={onElegir}
-        className="mt-2 flex min-h-8 items-center rounded-md bg-ink px-3 text-xs font-semibold text-white"
-      >
-        Elegir
-      </button>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={onElegir}
+          className="flex min-h-8 items-center rounded-md bg-ink px-3 text-xs font-semibold text-white"
+        >
+          Elegir
+        </button>
+        <button
+          type="button"
+          onClick={onDescartar}
+          className="flex min-h-8 items-center rounded-md border border-negative/30 bg-negative/5 px-3 text-xs font-semibold text-negative"
+        >
+          Descartar
+        </button>
+      </div>
     </div>
   );
 }

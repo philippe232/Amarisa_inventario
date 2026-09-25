@@ -71,3 +71,15 @@ export type ItemPurchaseMatch = {
   reviewed_at: string | null;
   is_active: boolean;
 };
+
+// "Descartar" on a candidate — the admin saying this specific gasto_line
+// is definitely not the purchase for this item (db/migrations/0025).
+// Distinct from ItemPurchaseMatch: there can be several per item (each
+// wrong candidate dismissed along the way), and it persists across
+// Recalcular re-scoring the item instead of being wiped with the cache.
+export type ItemCandidateRejection = {
+  item_id: string;
+  uid_itemc: string;
+  rejected_by: string | null;
+  rejected_at: string;
+};

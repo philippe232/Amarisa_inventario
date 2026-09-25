@@ -57,7 +57,18 @@ async function main() {
     );
     const skip = new Set(confirmed.map((r) => r.item_id));
 
-    console.log(`Scoring ${items.length} items against ${lines.length} candidate lines (${skip.size} confirmed, skipped)...`);
+    // "Descartar" in the review UI — a candidate the admin has already
+    // ruled out for this item, excluded from the pool before ranking
+    // (not just hidden after) so the next-best real candidate takes its
+    // rank instead of leaving a gap.
+    const { rows: rejections } = await client.query(`select item_id, uid_itemc from item_candidate_rejections`);
+    const rejectedByItem = new Map();
+    for (const r of rejections) {
+      if (!rejectedByItem.has(r.item_id)) rejectedByItem.set(r.item_id, new Set());
+      rejectedByItem.get(r.item_id).add(r.uid_itemc);
+    }
+
+    console.log(`Scoring ${items.length} items against ${lines.length} candidate lines (${skip.size} confirmed, skipped; ${rejections.length} rejections)...`);
 
     const tierCounts = { fuerte: 0, ambiguo: 0, debil: 0, sin_candidato: 0 };
     let inserted = 0;
@@ -67,7 +78,9 @@ async function main() {
 
       await client.query(`delete from item_match_candidates where item_id = $1`, [item.id]);
 
-      const ranked = rankCandidatesForItem(item, lines, 10);
+      const rejected = rejectedByItem.get(item.id);
+      const pool = rejected ? lines.filter((l) => !rejected.has(l.uid_itemc)) : lines;
+      const ranked = rankCandidatesForItem(item, pool, 10);
       if (ranked.length === 0) {
         tierCounts.sin_candidato++;
         continue;
