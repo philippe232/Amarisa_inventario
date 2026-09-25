@@ -9,11 +9,17 @@ import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
-import SearchFilterBar from "@/components/SearchFilterBar";
-import { CONDITION_OPTIONS } from "@/lib/condition";
-import { PRIORITY_OPTIONS } from "@/lib/priority";
-import { REVIEW_STATUS_OPTIONS } from "@/lib/review-status";
+import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
+import Pill from "@/components/Pill";
+import { CONDITION_OPTIONS, CONDITION_LABELS } from "@/lib/condition";
+import { PRIORITY_OPTIONS, PRIORITY_LABELS } from "@/lib/priority";
+import { REVIEW_STATUS_OPTIONS, REVIEW_STATUS_LABELS } from "@/lib/review-status";
 import type { Item } from "@/lib/types";
+
+// Sentinel for "no value set" in the priority/condición filters — both
+// are meaningful states worth filtering by (most items currently have
+// neither), unlike revisión where null just collapses into "nuevo".
+const NONE = "__none__";
 
 // Best-to-worst / most-to-least-urgent / earliest-to-latest rank, not
 // alphabetical — same order each OPTIONS list is itself defined in.
@@ -683,6 +689,12 @@ export default function RevisionList() {
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  // Multi-select per facet (OR within one, AND across facets) — same
+  // model as items-list.tsx's own área/tipo filter.
+  const [priorityFiltro, setPriorityFiltro] = useState<Set<string>>(new Set());
+  const [reviewStatusFiltro, setReviewStatusFiltro] = useState<Set<string>>(new Set());
+  const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
+  const [conditionFiltro, setConditionFiltro] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Keyed by área — each área's table sorts independently, since they're
   // rendered as separate <table>s and there's no reason picking a sort
@@ -760,15 +772,77 @@ export default function RevisionList() {
   const totalEnRevision = useMemo(() => items.filter((i) => i.review_status === "en_revision").length, [items]);
   const totalAprobado = useMemo(() => items.filter((i) => i.review_status === "aprobado").length, [items]);
 
+  const typeOptions = useMemo(() => Array.from(new Set(items.map((i) => i.type).filter((t): t is string => !!t))).sort(), [items]);
+
+  function togglePriority(value: string) {
+    setPriorityFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+  function toggleReviewStatus(value: string) {
+    setReviewStatusFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+  function toggleType(value: string) {
+    setTypeFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+  function toggleCondition(value: string) {
+    setConditionFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
   const filteredItems = useMemo(() => {
-    if (!search.trim()) return items;
-    const term = normalizeSearch(search.trim());
-    return items.filter((i) =>
-      [i.name, i.brand, i.model, i.serial_number, i.location, i.description]
-        .filter(Boolean)
-        .some((field) => normalizeSearch(field as string).includes(term)),
-    );
-  }, [items, search]);
+    let result = items;
+    if (search.trim()) {
+      const term = normalizeSearch(search.trim());
+      result = result.filter((i) =>
+        [i.name, i.brand, i.model, i.serial_number, i.location, i.description]
+          .filter(Boolean)
+          .some((field) => normalizeSearch(field as string).includes(term)),
+      );
+    }
+    if (priorityFiltro.size > 0) result = result.filter((i) => priorityFiltro.has(i.priority ?? NONE));
+    if (reviewStatusFiltro.size > 0) result = result.filter((i) => reviewStatusFiltro.has(i.review_status ?? "nuevo"));
+    if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
+    if (conditionFiltro.size > 0) result = result.filter((i) => conditionFiltro.has(i.condition_rating ?? NONE));
+    return result;
+  }, [items, search, priorityFiltro, reviewStatusFiltro, typeFiltro, conditionFiltro]);
+
+  const chips: FilterChip[] = [
+    ...Array.from(priorityFiltro).map((v) => ({ id: `priority:${v}`, label: v === NONE ? "Sin prioridad" : PRIORITY_LABELS[v as keyof typeof PRIORITY_LABELS] })),
+    ...Array.from(reviewStatusFiltro).map((v) => ({ id: `review:${v}`, label: REVIEW_STATUS_LABELS[v as keyof typeof REVIEW_STATUS_LABELS] })),
+    ...Array.from(typeFiltro).map((v) => ({ id: `type:${v}`, label: v })),
+    ...Array.from(conditionFiltro).map((v) => ({ id: `condition:${v}`, label: v === NONE ? "Sin condición" : CONDITION_LABELS[v as keyof typeof CONDITION_LABELS] })),
+  ];
+
+  function handleRemoveChip(id: string) {
+    const sep = id.indexOf(":");
+    const kind = id.slice(0, sep);
+    const value = id.slice(sep + 1);
+    if (kind === "priority") togglePriority(value);
+    else if (kind === "review") toggleReviewStatus(value);
+    else if (kind === "type") toggleType(value);
+    else if (kind === "condition") toggleCondition(value);
+  }
+
+  const hasActiveFilters =
+    search !== "" || priorityFiltro.size > 0 || reviewStatusFiltro.size > 0 || typeFiltro.size > 0 || conditionFiltro.size > 0;
 
   const grouped = useMemo(() => {
     const byArea = new Map<string, Row[]>();
@@ -831,7 +905,80 @@ export default function RevisionList() {
 
   return (
     <>
-      <SearchFilterBar value={search} onChange={setSearch} placeholder="Buscar por nombre, ubicación, marca, modelo o serie" />
+      <SearchFilterBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Buscar por nombre, ubicación, marca, modelo o serie"
+        chips={chips}
+        onRemoveChip={handleRemoveChip}
+        onClearAll={
+          hasActiveFilters
+            ? () => {
+                setSearch("");
+                setPriorityFiltro(new Set());
+                setReviewStatusFiltro(new Set());
+                setTypeFiltro(new Set());
+                setConditionFiltro(new Set());
+              }
+            : undefined
+        }
+        sheetTitle="Filtrar"
+        sheetContent={
+          <div className="space-y-5">
+            <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Prioridad</span>
+              <div className="flex flex-wrap gap-2">
+                {PRIORITY_OPTIONS.map((opt) => (
+                  <Pill key={opt.value} active={priorityFiltro.has(opt.value)} onClick={() => togglePriority(opt.value)}>
+                    {opt.label}
+                  </Pill>
+                ))}
+                <Pill active={priorityFiltro.has(NONE)} onClick={() => togglePriority(NONE)}>
+                  Sin prioridad
+                </Pill>
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Revisión</span>
+              <div className="flex flex-wrap gap-2">
+                {REVIEW_STATUS_OPTIONS.map((opt) => (
+                  <Pill key={opt.value} active={reviewStatusFiltro.has(opt.value)} onClick={() => toggleReviewStatus(opt.value)}>
+                    {opt.label}
+                  </Pill>
+                ))}
+              </div>
+            </div>
+
+            {typeOptions.length > 0 && (
+              <div>
+                <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Tipo</span>
+                <div className="flex flex-wrap gap-2">
+                  {typeOptions.map((type) => (
+                    <Pill key={type} active={typeFiltro.has(type)} onClick={() => toggleType(type)}>
+                      {type}
+                    </Pill>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Condición</span>
+              <div className="flex flex-wrap gap-2">
+                {CONDITION_OPTIONS.map((opt) => (
+                  <Pill key={opt.value} active={conditionFiltro.has(opt.value)} onClick={() => toggleCondition(opt.value)}>
+                    {opt.label}
+                  </Pill>
+                ))}
+                <Pill active={conditionFiltro.has(NONE)} onClick={() => toggleCondition(NONE)}>
+                  Sin condición
+                </Pill>
+              </div>
+            </div>
+          </div>
+        }
+      />
 
       <div className="px-3.5 py-3">
         {loading ? (
