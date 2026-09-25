@@ -753,7 +753,7 @@ function SortableTh({
   const style: React.CSSProperties | undefined =
     stickyLeft != null ? { left: stickyLeft, width, minWidth: width } : width != null ? { width, minWidth: width } : undefined;
   return (
-    <th className={`px-2.5 py-2 ${stickyLeft != null ? "sticky z-20 border-r border-line bg-page" : ""}`} style={style}>
+    <th className={`px-2.5 py-2 ${stickyLeft != null ? "sticky z-[2] border-r border-line bg-page" : ""}`} style={style}>
       <button
         type="button"
         onClick={() => onSort(colKey)}
@@ -1228,7 +1228,7 @@ export default function RevisionList() {
                                       flagged row does. Ref.'s left offset is
                                       exactly Artículo's width, so they sit flush. */}
                                   <td
-                                    className="sticky z-10 border-r border-line bg-card px-2.5 py-2 align-top font-semibold text-ink"
+                                    className="sticky z-[1] border-r border-line bg-card px-2.5 py-2 align-top font-semibold text-ink"
                                     style={{ left: 0, width: ARTICULO_COL_WIDTH, minWidth: ARTICULO_COL_WIDTH }}
                                   >
                                     <InlineText
@@ -1238,7 +1238,7 @@ export default function RevisionList() {
                                     />
                                   </td>
                                   <td
-                                    className="sticky z-10 border-r border-line bg-card px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft"
+                                    className="sticky z-[1] border-r border-line bg-card px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft"
                                     style={{ left: ARTICULO_COL_WIDTH, width: REF_COL_WIDTH, minWidth: REF_COL_WIDTH }}
                                     title="No se puede modificar"
                                   >
