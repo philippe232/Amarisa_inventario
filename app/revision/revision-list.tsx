@@ -172,6 +172,69 @@ function InlineNumber({
   );
 }
 
+const ADD_NEW = "__add_new__";
+
+// Same picker-with-escape-hatch UX as item-edit-form.tsx's own
+// PickerField — a dropdown of every distinct value already in the
+// catalog, plus "+ Agregar nuevo..." to type one that isn't there yet.
+// Área/Tipo/Ubicación are free-text columns on purpose (see
+// db/migrations/0001), so there's no reference table to insert into —
+// a new value just becomes selectable itself once this reloads.
+function PickerInline({
+  value,
+  options,
+  onCommit,
+}: {
+  value: string;
+  options: string[];
+  onCommit: (value: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const allOptions = value && !options.includes(value) ? [...options, value].sort() : options;
+
+  if (adding) {
+    return (
+      <input
+        type="text"
+        autoFocus
+        value={draft}
+        placeholder="Nuevo valor"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setAdding(false);
+          const trimmed = draft.trim();
+          if (trimmed && trimmed !== value) onCommit(trimmed);
+        }}
+        className={inlineInputClass}
+      />
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === ADD_NEW) {
+          setDraft("");
+          setAdding(true);
+        } else {
+          onCommit(e.target.value);
+        }
+      }}
+      className={inlineSelectClass}
+    >
+      <option value="">Sin dato</option>
+      {allOptions.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+      <option value={ADD_NEW}>+ Agregar nuevo...</option>
+    </select>
+  );
+}
+
 // Mirrors item-edit-form.tsx's own section grouping 1:1 (Encabezado /
 // Procesamiento / Descripción / Estado del artículo / Precio, plus
 // Fotos y referencias for item_photos/item_links) — every toggleable
@@ -196,11 +259,17 @@ const GROUPS: { key: GroupKey; label: string }[] = [
 // onBlur instead, so typing itself never hits the network.
 type WriteFieldFn = (itemId: string, field: string, value: unknown, revertValue: unknown) => void;
 
+// Populated from whatever's already in the catalog (see the
+// typeOptions/locationOptions useMemo below) — only the type/location
+// columns' PickerInline actually reads this; every other render
+// function just ignores the third argument.
+type PickerOptions = { type: string[]; location: string[] };
+
 type ColumnDef = {
   key: string;
   group: GroupKey;
   label: string;
-  render: (item: Row, writeField: WriteFieldFn) => React.ReactNode;
+  render: (item: Row, writeField: WriteFieldFn, pickerOptions: PickerOptions) => React.ReactNode;
   sortValue: (item: Row) => SortValue;
 };
 
@@ -313,15 +382,17 @@ const COLUMNS: ColumnDef[] = [
     key: "type",
     group: "descripcion",
     label: "Tipo",
-    render: (i, writeField) => <InlineText value={i.type ?? ""} onCommit={(v) => writeField(i.id, "type", v.trim() || null, i.type)} />,
+    render: (i, writeField, pickerOptions) => (
+      <PickerInline value={i.type ?? ""} options={pickerOptions.type} onCommit={(v) => writeField(i.id, "type", v || null, i.type)} />
+    ),
     sortValue: (i) => i.type,
   },
   {
     key: "location",
     group: "descripcion",
     label: "Ubicación",
-    render: (i, writeField) => (
-      <InlineText value={i.location ?? ""} onCommit={(v) => writeField(i.id, "location", v.trim() || null, i.location)} />
+    render: (i, writeField, pickerOptions) => (
+      <PickerInline value={i.location ?? ""} options={pickerOptions.location} onCommit={(v) => writeField(i.id, "location", v || null, i.location)} />
     ),
     sortValue: (i) => i.location,
   },
@@ -652,21 +723,28 @@ function compareValues(a: SortValue, b: SortValue, dir: SortDir): number {
   return dir === "asc" ? cmp : -cmp;
 }
 
+// `sticky` freezes just the Artículo column — the table gets wide
+// enough that losing track of which row is which while scrolling right
+// defeats the point of showing every column. Needs an OPAQUE background
+// (not the header row's bg-page/60) since a sticky cell has to actually
+// occlude whatever scrolls underneath it, not just tint it.
 function SortableTh({
   colKey,
   label,
   active,
   dir,
   onSort,
+  sticky = false,
 }: {
   colKey: string;
   label: string;
   active: boolean;
   dir: SortDir | undefined;
   onSort: (key: string) => void;
+  sticky?: boolean;
 }) {
   return (
-    <th className="px-2.5 py-2">
+    <th className={`px-2.5 py-2 ${sticky ? "sticky left-0 z-20 min-w-[160px] border-r border-line bg-page" : ""}`}>
       <button
         type="button"
         onClick={() => onSort(colKey)}
@@ -773,6 +851,11 @@ export default function RevisionList() {
   const totalAprobado = useMemo(() => items.filter((i) => i.review_status === "aprobado").length, [items]);
 
   const typeOptions = useMemo(() => Array.from(new Set(items.map((i) => i.type).filter((t): t is string => !!t))).sort(), [items]);
+  const locationOptions = useMemo(
+    () => Array.from(new Set(items.map((i) => i.location).filter((l): l is string => !!l))).sort(),
+    [items],
+  );
+  const pickerOptions = useMemo(() => ({ type: typeOptions, location: locationOptions }), [typeOptions, locationOptions]);
 
   function togglePriority(value: string) {
     setPriorityFiltro((prev) => {
@@ -1092,6 +1175,7 @@ export default function RevisionList() {
                                 active={sortState[area]?.key === PINNED_START.key}
                                 dir={sortState[area]?.key === PINNED_START.key ? sortState[area]?.dir : undefined}
                                 onSort={(key) => handleSort(area, key)}
+                                sticky
                               />
                               <SortableTh
                                 colKey={PINNED_REF.key}
@@ -1125,7 +1209,11 @@ export default function RevisionList() {
                               const revisar = extractRevisar(item.condition_notes).revisar;
                               return (
                                 <tr key={item.id} className={`border-b border-line text-sm last:border-0 ${revisar ? "bg-negative/5" : ""}`}>
-                                  <td className="px-2.5 py-2 align-top font-semibold text-ink">
+                                  {/* Frozen column: opaque bg-card so it occludes
+                                      cells scrolling underneath — this is why it
+                                      doesn't pick up the row's own bg-negative/5
+                                      tint the way the rest of a flagged row does. */}
+                                  <td className="sticky left-0 z-10 min-w-[160px] border-r border-line bg-card px-2.5 py-2 align-top font-semibold text-ink">
                                     <InlineText
                                       value={item.name}
                                       className="font-semibold"
@@ -1137,7 +1225,7 @@ export default function RevisionList() {
                                   </td>
                                   {activeColumns.map((c) => (
                                     <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
-                                      {c.render(item, writeField)}
+                                      {c.render(item, writeField, pickerOptions)}
                                     </td>
                                   ))}
                                   <td
