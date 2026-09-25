@@ -11,24 +11,17 @@ import { useSessionInfo } from "@/lib/auth";
 // open animation) — simplified to a flat list since this app has no
 // sections/badges to account for.
 const VIEWER_NAV_ITEMS = [
-  { href: "/items", label: "Inicio", icon: Home, external: false },
-  { href: "/wishlist", label: "Mi lista", icon: Heart, external: false },
+  { href: "/items", label: "Inicio", icon: Home },
+  { href: "/wishlist", label: "Mi lista", icon: Heart },
 ];
-// Editor/Owner's whole app surface is list/detail/edit — Mi lista is a
-// customer feature (bids on their own anonymous session's wishlist),
-// meaningless for an admin identity. Scoped the same for Editor and
-// Owner "for now" per explicit instruction, not a permissions split.
-// "Revisión de Inventario" is external (a Claude artifact, not an app
-// route) — opens in a new tab so the drawer's own navigation state
-// isn't lost.
+// Editor/Owner's whole app surface is list/detail/edit, plus the
+// Revisión de Inventario screen (app/revision) — a real in-app route,
+// not the external Claude artifact this briefly linked to. Scoped the
+// same for Editor and Owner "for now" per explicit instruction, not a
+// permissions split.
 const ADMIN_NAV_ITEMS = [
-  { href: "/items", label: "Inicio", icon: Home, external: false },
-  {
-    href: "https://claude.ai/artifact/KoNVMkdRQFZ9W3AdXxWncQ",
-    label: "Revisión de Inventario",
-    icon: ClipboardList,
-    external: true,
-  },
+  { href: "/items", label: "Inicio", icon: Home },
+  { href: "/revision", label: "Revisión de Inventario", icon: ClipboardList },
 ];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -55,31 +48,17 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-          {navItems.map(({ href, label, icon: Icon, external }) =>
-            external ? (
-              <a
-                key={href}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onClose}
-                className="flex min-h-11 items-center gap-3 rounded-md px-3 py-1.5 text-sm text-ink hover:bg-page"
-              >
-                <Icon className="h-5 w-5 shrink-0 text-ink-soft" aria-hidden="true" />
-                <span className="flex-1">{label}</span>
-              </a>
-            ) : (
-              <Link
-                key={href}
-                href={href}
-                onClick={onClose}
-                className="flex min-h-11 items-center gap-3 rounded-md px-3 py-1.5 text-sm text-ink hover:bg-page"
-              >
-                <Icon className="h-5 w-5 shrink-0 text-ink-soft" aria-hidden="true" />
-                <span className="flex-1">{label}</span>
-              </Link>
-            )
-          )}
+          {navItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              onClick={onClose}
+              className="flex min-h-11 items-center gap-3 rounded-md px-3 py-1.5 text-sm text-ink hover:bg-page"
+            >
+              <Icon className="h-5 w-5 shrink-0 text-ink-soft" aria-hidden="true" />
+              <span className="flex-1">{label}</span>
+            </Link>
+          ))}
         </nav>
 
         {/* Always one of the two states — a signed-in identity (email,
