@@ -14,7 +14,13 @@ import Pill from "@/components/Pill";
 import { CONDITION_OPTIONS, CONDITION_LABELS } from "@/lib/condition";
 import { PRIORITY_OPTIONS, PRIORITY_LABELS } from "@/lib/priority";
 import { REVIEW_STATUS_OPTIONS, REVIEW_STATUS_LABELS } from "@/lib/review-status";
+import {
+  STATUS_OPTIONS as MATCH_STATUS_OPTIONS,
+  STATUS_LABELS as MATCH_STATUS_LABELS,
+  STATUS_COLORS as MATCH_STATUS_COLORS,
+} from "@/lib/gasto-matching/status";
 import type { Item } from "@/lib/types";
+import type { PurchaseMatchStatus } from "@/lib/gasto-matching/types";
 
 // Sentinel for "no value set" in the priority/condición filters — both
 // are meaningful states worth filtering by (most items currently have
@@ -50,6 +56,12 @@ type Row = Item & {
   photoUrl: string | null;
   photoCount: number;
   linkCount: number;
+  // From the active item_purchase_matches row (db/migrations/0023,
+  // /match-compras) — null means no purchase match has been made yet,
+  // never "pendiente" in practice (nothing in that screen writes that
+  // status today). Read-only here; the actual match/CFDI/units workflow
+  // lives entirely in /match-compras, not this table's inline editing.
+  matchStatus: PurchaseMatchStatus | null;
 };
 
 // condition_notes carries an inline "[REVISAR: ...]" tag for anything
@@ -376,6 +388,24 @@ const COLUMNS: ColumnDef[] = [
       <InlineText value={i.internal_notes ?? ""} onCommit={(v) => writeField(i.id, "internal_notes", v.trim() || null, i.internal_notes)} />
     ),
     sortValue: (i) => i.internal_notes,
+  },
+  {
+    key: "match_status",
+    group: "procesamiento",
+    label: "Match",
+    // Read-only — the actual match/CFDI/units decision happens entirely
+    // in /match-compras (item_purchase_matches), not as a quick inline
+    // edit here; this column is just so /revision can see and filter by
+    // where each item stands in that other workflow.
+    render: (i) =>
+      i.matchStatus ? (
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold ${MATCH_STATUS_COLORS[i.matchStatus]}`}>
+          {MATCH_STATUS_LABELS[i.matchStatus]}
+        </span>
+      ) : (
+        <span className="text-ink-faint">—</span>
+      ),
+    sortValue: (i) => i.matchStatus,
   },
   // Descripción
   {
@@ -782,6 +812,7 @@ export default function RevisionList() {
   const [reviewStatusFiltro, setReviewStatusFiltro] = useState<Set<string>>(new Set());
   const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
   const [conditionFiltro, setConditionFiltro] = useState<Set<string>>(new Set());
+  const [matchFiltro, setMatchFiltro] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Keyed by área — each área's table sorts independently, since they're
   // rendered as separate <table>s and there's no reason picking a sort
@@ -811,10 +842,11 @@ export default function RevisionList() {
       // item is always the primary photo (same convention as
       // items-list.tsx). Link count is a flat id list — the table's
       // tiny enough that no per-item count view exists for it.
-      const [itemsRes, photosRes, linksRes] = await Promise.all([
+      const [itemsRes, photosRes, linksRes, matchesRes] = await Promise.all([
         supabase.from("items").select("*"),
         supabase.from("item_photos").select("item_id, url").order("sort_order"),
         supabase.from("item_links").select("item_id"),
+        supabase.from("item_purchase_matches").select("item_id, status").eq("is_active", true),
       ]);
       if (cancelled) return;
 
@@ -834,12 +866,17 @@ export default function RevisionList() {
       for (const row of linksRes.data ?? []) {
         linkCounts.set(row.item_id, (linkCounts.get(row.item_id) ?? 0) + 1);
       }
+      const matchStatuses = new Map<string, PurchaseMatchStatus>();
+      for (const row of matchesRes.data ?? []) {
+        matchStatuses.set(row.item_id, row.status as PurchaseMatchStatus);
+      }
 
       const rows: Row[] = (itemsRes.data as Item[]).map((item) => ({
         ...item,
         photoUrl: photoUrls.get(item.id) ?? null,
         photoCount: photoCounts.get(item.id) ?? 0,
         linkCount: linkCounts.get(item.id) ?? 0,
+        matchStatus: matchStatuses.get(item.id) ?? null,
       }));
       setItems(rows);
       setError(null);
@@ -898,6 +935,14 @@ export default function RevisionList() {
       return next;
     });
   }
+  function toggleMatch(value: string) {
+    setMatchFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
 
   const filteredItems = useMemo(() => {
     let result = items;
@@ -913,14 +958,16 @@ export default function RevisionList() {
     if (reviewStatusFiltro.size > 0) result = result.filter((i) => reviewStatusFiltro.has(i.review_status ?? "nuevo"));
     if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
     if (conditionFiltro.size > 0) result = result.filter((i) => conditionFiltro.has(i.condition_rating ?? NONE));
+    if (matchFiltro.size > 0) result = result.filter((i) => matchFiltro.has(i.matchStatus ?? NONE));
     return result;
-  }, [items, search, priorityFiltro, reviewStatusFiltro, typeFiltro, conditionFiltro]);
+  }, [items, search, priorityFiltro, reviewStatusFiltro, typeFiltro, conditionFiltro, matchFiltro]);
 
   const chips: FilterChip[] = [
     ...Array.from(priorityFiltro).map((v) => ({ id: `priority:${v}`, label: v === NONE ? "Sin prioridad" : PRIORITY_LABELS[v as keyof typeof PRIORITY_LABELS] })),
     ...Array.from(reviewStatusFiltro).map((v) => ({ id: `review:${v}`, label: REVIEW_STATUS_LABELS[v as keyof typeof REVIEW_STATUS_LABELS] })),
     ...Array.from(typeFiltro).map((v) => ({ id: `type:${v}`, label: v })),
     ...Array.from(conditionFiltro).map((v) => ({ id: `condition:${v}`, label: v === NONE ? "Sin condición" : CONDITION_LABELS[v as keyof typeof CONDITION_LABELS] })),
+    ...Array.from(matchFiltro).map((v) => ({ id: `match:${v}`, label: v === NONE ? "Sin match" : MATCH_STATUS_LABELS[v as PurchaseMatchStatus] })),
   ];
 
   function handleRemoveChip(id: string) {
@@ -931,10 +978,16 @@ export default function RevisionList() {
     else if (kind === "review") toggleReviewStatus(value);
     else if (kind === "type") toggleType(value);
     else if (kind === "condition") toggleCondition(value);
+    else if (kind === "match") toggleMatch(value);
   }
 
   const hasActiveFilters =
-    search !== "" || priorityFiltro.size > 0 || reviewStatusFiltro.size > 0 || typeFiltro.size > 0 || conditionFiltro.size > 0;
+    search !== "" ||
+    priorityFiltro.size > 0 ||
+    reviewStatusFiltro.size > 0 ||
+    typeFiltro.size > 0 ||
+    conditionFiltro.size > 0 ||
+    matchFiltro.size > 0;
 
   const grouped = useMemo(() => {
     const byArea = new Map<string, Row[]>();
@@ -1011,6 +1064,7 @@ export default function RevisionList() {
                 setReviewStatusFiltro(new Set());
                 setTypeFiltro(new Set());
                 setConditionFiltro(new Set());
+                setMatchFiltro(new Set());
               }
             : undefined
         }
@@ -1065,6 +1119,20 @@ export default function RevisionList() {
                 ))}
                 <Pill active={conditionFiltro.has(NONE)} onClick={() => toggleCondition(NONE)}>
                   Sin condición
+                </Pill>
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Match</span>
+              <div className="flex flex-wrap gap-2">
+                {MATCH_STATUS_OPTIONS.map((opt) => (
+                  <Pill key={opt.value} active={matchFiltro.has(opt.value)} onClick={() => toggleMatch(opt.value)}>
+                    {opt.label}
+                  </Pill>
+                ))}
+                <Pill active={matchFiltro.has(NONE)} onClick={() => toggleMatch(NONE)}>
+                  Sin match
                 </Pill>
               </div>
             </div>
