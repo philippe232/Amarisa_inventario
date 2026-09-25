@@ -284,6 +284,7 @@ type FormState = {
   data_status: DataStatus | "";
   priority: ItemPriority | "";
   review_status: ItemReviewStatus;
+  internal_notes: string;
 };
 
 function toFormState(item: Item): FormState {
@@ -314,6 +315,7 @@ function toFormState(item: Item): FormState {
     data_status: item.data_status ?? "",
     priority: item.priority ?? "",
     review_status: item.review_status ?? "nuevo",
+    internal_notes: item.internal_notes ?? "",
   };
 }
 
@@ -445,6 +447,7 @@ export default function ItemEditForm({ id }: { id: string }) {
         data_status: form.data_status || null,
         priority: form.priority || null,
         review_status: form.review_status,
+        internal_notes: form.internal_notes || null,
       })
       .eq("id", id);
 
@@ -603,6 +606,27 @@ export default function ItemEditForm({ id }: { id: string }) {
               ))}
             </RowSelect>
           </FieldRow>
+          <FieldRow label="Estado de datos">
+            <RowSelect
+              value={form.data_status}
+              onChange={(e) => set("data_status", e.target.value as FormState["data_status"])}
+            >
+              <option value="">Sin dato</option>
+              {DATA_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </RowSelect>
+          </FieldRow>
+        </FieldGroup>
+      </section>
+
+      {/* Internal triage — separate from Encabezado since none of this
+          is about what the article IS, just how Amarisa is handling it. */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-bold tracking-wide text-ink-soft uppercase">Procesamiento</h2>
+        <FieldGroup>
           <FieldRow label="Revisión">
             <RowSelect value={form.review_status} onChange={(e) => set("review_status", e.target.value as ItemReviewStatus)}>
               {REVIEW_STATUS_OPTIONS.map((opt) => (
@@ -622,20 +646,12 @@ export default function ItemEditForm({ id }: { id: string }) {
               ))}
             </RowSelect>
           </FieldRow>
-          <FieldRow label="Estado de datos">
-            <RowSelect
-              value={form.data_status}
-              onChange={(e) => set("data_status", e.target.value as FormState["data_status"])}
-            >
-              <option value="">Sin dato</option>
-              {DATA_STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </RowSelect>
-          </FieldRow>
         </FieldGroup>
+        <LabeledTextarea
+          label="Notas"
+          value={form.internal_notes}
+          onChange={(e) => set("internal_notes", e.target.value)}
+        />
       </section>
 
       <section className="space-y-3">

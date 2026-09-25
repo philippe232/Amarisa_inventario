@@ -185,6 +185,9 @@ export default function ItemDetail({ id }: { id: string }) {
           {item.review_status && <ReviewStatusBadge status={item.review_status} />}
           {item.priority && <PriorityBadge priority={item.priority} />}
         </div>
+        {/* Same masking as the badges above — internal_notes is never
+            populated for a non-admin session. */}
+        {item.internal_notes && <p className="mt-1.5 text-sm whitespace-pre-wrap text-ink-soft">{item.internal_notes}</p>}
       </div>
 
       {/* 2. Pricing */}

@@ -11,8 +11,6 @@ import { formatDimensions, getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
 import ConditionBadge from "@/components/ConditionBadge";
 import StatusBadge from "@/components/StatusBadge";
-import PriorityBadge from "@/components/PriorityBadge";
-import ReviewStatusBadge from "@/components/ReviewStatusBadge";
 import SearchFilterBar from "@/components/SearchFilterBar";
 import { CONDITION_OPTIONS } from "@/lib/condition";
 import { PRIORITY_OPTIONS } from "@/lib/priority";
@@ -103,27 +101,68 @@ function FacturaPdfLink({ path }: { path: string | null }) {
 }
 
 // Mirrors item-edit-form.tsx's own section grouping 1:1 (Encabezado /
-// Descripción / Estado del artículo / Precio, plus Fotos y referencias
-// for item_photos/item_links) — every toggleable column belongs to
-// exactly one of these, so turning a group off always corresponds to a
-// whole section of the edit form, not an arbitrary column subset.
-type GroupKey = "encabezado" | "descripcion" | "estado" | "precio" | "fotos";
+// Procesamiento / Descripción / Estado del artículo / Precio, plus
+// Fotos y referencias for item_photos/item_links) — every toggleable
+// column belongs to exactly one of these, so turning a group off
+// always corresponds to a whole section of the edit form, not an
+// arbitrary column subset.
+type GroupKey = "encabezado" | "procesamiento" | "descripcion" | "estado" | "precio" | "fotos";
 
 const GROUPS: { key: GroupKey; label: string }[] = [
   { key: "encabezado", label: "Encabezado" },
+  { key: "procesamiento", label: "Procesamiento" },
   { key: "descripcion", label: "Descripción" },
   { key: "estado", label: "Estado del artículo" },
   { key: "precio", label: "Precio" },
   { key: "fotos", label: "Fotos y referencias" },
 ];
 
+// review_status/priority write straight back to the DB on change (same
+// immediate-write pattern as PhotoManager/FacturaPdfUpload elsewhere in
+// this app) — every other column here is read-only, so only those two
+// render functions actually use this second argument.
+type UpdateFieldFn = (itemId: string, field: "review_status" | "priority", value: string | null) => void;
+
 type ColumnDef = {
   key: string;
   group: GroupKey;
   label: string;
-  render: (item: Row) => React.ReactNode;
+  render: (item: Row, updateField: UpdateFieldFn) => React.ReactNode;
   sortValue: (item: Row) => SortValue;
 };
+
+function ReviewStatusSelect({ item, onChange }: { item: Row; onChange: (value: string) => void }) {
+  return (
+    <select
+      value={item.review_status ?? "nuevo"}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded border border-line-strong bg-card px-1.5 py-1 text-xs text-ink"
+    >
+      {REVIEW_STATUS_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function PrioritySelect({ item, onChange }: { item: Row; onChange: (value: string) => void }) {
+  return (
+    <select
+      value={item.priority ?? ""}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded border border-line-strong bg-card px-1.5 py-1 text-xs text-ink"
+    >
+      <option value="">Sin prioridad</option>
+      {PRIORITY_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 const COLUMNS: ColumnDef[] = [
   // Encabezado
@@ -136,25 +175,33 @@ const COLUMNS: ColumnDef[] = [
   },
   { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} />, sortValue: (i) => i.status },
   {
-    key: "review_status",
-    group: "encabezado",
-    label: "Revisión",
-    render: (i) => (i.review_status ? <ReviewStatusBadge status={i.review_status} /> : <span className="text-ink-faint">—</span>),
-    sortValue: (i) => (i.review_status ? REVIEW_STATUS_RANK[i.review_status] : null),
-  },
-  {
-    key: "priority",
-    group: "encabezado",
-    label: "Prioridad",
-    render: (i) => (i.priority ? <PriorityBadge priority={i.priority} /> : <span className="text-ink-faint">—</span>),
-    sortValue: (i) => (i.priority ? PRIORITY_RANK[i.priority] : null),
-  },
-  {
     key: "data_status",
     group: "encabezado",
     label: "Datos",
     render: (i) => dataStatusBadge(i.data_status),
     sortValue: (i) => i.data_status,
+  },
+  // Procesamiento — internal triage, not about what the article IS.
+  {
+    key: "review_status",
+    group: "procesamiento",
+    label: "Revisión",
+    render: (i, updateField) => <ReviewStatusSelect item={i} onChange={(v) => updateField(i.id, "review_status", v)} />,
+    sortValue: (i) => (i.review_status ? REVIEW_STATUS_RANK[i.review_status] : null),
+  },
+  {
+    key: "priority",
+    group: "procesamiento",
+    label: "Prioridad",
+    render: (i, updateField) => <PrioritySelect item={i} onChange={(v) => updateField(i.id, "priority", v || null)} />,
+    sortValue: (i) => (i.priority ? PRIORITY_RANK[i.priority] : null),
+  },
+  {
+    key: "internal_notes",
+    group: "procesamiento",
+    label: "Notas",
+    render: (i) => text(i.internal_notes),
+    sortValue: (i) => i.internal_notes,
   },
   // Descripción
   { key: "type", group: "descripcion", label: "Tipo", render: (i) => text(i.type), sortValue: (i) => i.type },
@@ -339,6 +386,7 @@ export default function RevisionList() {
   const [items, setItems] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Keyed by área — each área's table sorts independently, since they're
@@ -418,6 +466,9 @@ export default function RevisionList() {
   const totalRevisar = useMemo(() => items.filter((i) => i.revisar).length, [items]);
   const totalNoPhoto = useMemo(() => items.filter((i) => i.photoCount === 0).length, [items]);
   const totalFetched = useMemo(() => items.filter((i) => i.data_status === "fetched").length, [items]);
+  const totalNuevo = useMemo(() => items.filter((i) => (i.review_status ?? "nuevo") === "nuevo").length, [items]);
+  const totalEnRevision = useMemo(() => items.filter((i) => i.review_status === "en_revision").length, [items]);
+  const totalAprobado = useMemo(() => items.filter((i) => i.review_status === "aprobado").length, [items]);
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
@@ -446,6 +497,19 @@ export default function RevisionList() {
   function toggleArea(area: string) {
     setCollapsed((prev) => ({ ...prev, [area]: !prev[area] }));
   }
+
+  // Writes straight to the DB (same immediate-write pattern as
+  // PhotoManager/FacturaPdfUpload) — optimistic update first so the
+  // select reflects the change instantly, reverted if the write fails.
+  const updateField: UpdateFieldFn = async (itemId, field, value) => {
+    const prev = items;
+    setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: value } : i)));
+    const { error: updateError } = await supabase.from("items").update({ [field]: value }).eq("id", itemId);
+    if (updateError) {
+      setItems(prev);
+      setSaveError(updateError.message);
+    }
+  };
 
   function handleSort(area: string, key: string) {
     setSortState((prev) => {
@@ -487,6 +551,12 @@ export default function RevisionList() {
           <p className="p-4 text-sm text-red-600">Error: {error}</p>
         ) : (
           <>
+            {saveError && (
+              <p className="mb-3 rounded-md border border-negative/30 bg-negative/10 px-3 py-2 text-sm text-negative">
+                No se pudo guardar: {saveError}
+              </p>
+            )}
+
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-ink [font-variant-numeric:tabular-nums]">{items.length}</p>
@@ -503,6 +573,21 @@ export default function RevisionList() {
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalFetched}</p>
                 <p className="text-xs text-ink-soft">Obtenidos (Claude)</p>
+              </div>
+              {/* Same three-way split as review_status/ReviewStatusBadge:
+                  neutral (untouched) -> yellow (in progress) -> positive
+                  (cleared). */}
+              <div className="rounded-md border border-line bg-card p-3">
+                <p className="text-xl font-bold text-neutral [font-variant-numeric:tabular-nums]">{totalNuevo}</p>
+                <p className="text-xs text-ink-soft">Nuevo</p>
+              </div>
+              <div className="rounded-md border border-line bg-card p-3">
+                <p className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalEnRevision}</p>
+                <p className="text-xs text-ink-soft">En revisión</p>
+              </div>
+              <div className="rounded-md border border-line bg-card p-3">
+                <p className="text-xl font-bold text-positive [font-variant-numeric:tabular-nums]">{totalAprobado}</p>
+                <p className="text-xs text-ink-soft">Aprobado</p>
               </div>
             </div>
 
@@ -611,7 +696,7 @@ export default function RevisionList() {
                                   <td className="px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft">{item.ref_code ?? "—"}</td>
                                   {activeColumns.map((c) => (
                                     <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
-                                      {c.render(item)}
+                                      {c.render(item, updateField)}
                                     </td>
                                   ))}
                                   <td className="px-2.5 py-2 align-top text-ink-faint [font-variant-numeric:tabular-nums] whitespace-nowrap">

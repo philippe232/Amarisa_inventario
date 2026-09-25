@@ -78,6 +78,11 @@ export type Item = {
   data_status: DataStatus | null;
   priority: ItemPriority | null;
   review_status: ItemReviewStatus | null;
+  // Free-text internal notes (db/migrations/0020) — why a priority was
+  // set, what stage something's at, anything that isn't the article's
+  // physical condition (condition_notes) or repair history
+  // (maintenance_notes). Same masking as priority/review_status.
+  internal_notes: string | null;
   created_at: string;
   updated_at: string;
 };
