@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
+    "fuzzball": "^2.2.6",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",
     "pg": "^8.23.0",

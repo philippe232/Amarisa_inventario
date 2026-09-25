@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 reference/
+
+# Real financial exports (Gastos/Flujos xlsx) — never commit these
+/data/import/

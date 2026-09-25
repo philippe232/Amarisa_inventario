@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Heart, LogOut, LogIn, ClipboardList } from "lucide-react";
+import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 
@@ -22,6 +22,7 @@ const VIEWER_NAV_ITEMS = [
 const ADMIN_NAV_ITEMS = [
   { href: "/items", label: "Inicio", icon: Home },
   { href: "/revision", label: "Revisión de Inventario", icon: ClipboardList },
+  { href: "/match-compras", label: "Precios de Compra", icon: Receipt },
 ];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
