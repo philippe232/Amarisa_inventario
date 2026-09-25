@@ -12,7 +12,15 @@ import { normalizeSearch } from "@/lib/normalize-search";
 import ConditionBadge from "@/components/ConditionBadge";
 import StatusBadge from "@/components/StatusBadge";
 import SearchFilterBar from "@/components/SearchFilterBar";
+import { CONDITION_OPTIONS } from "@/lib/condition";
 import type { Item, DataStatus } from "@/lib/types";
+
+// Best-to-worst rank, not alphabetical — same order CONDITION_OPTIONS
+// itself is defined in.
+const CONDITION_RANK: Record<string, number> = Object.fromEntries(CONDITION_OPTIONS.map((o, idx) => [o.value, idx]));
+
+type SortValue = string | number | null;
+type SortDir = "asc" | "desc";
 
 // Fixed area sequence, not alphabetical — matches the physical walk-
 // through order the September count itself followed.
@@ -108,29 +116,55 @@ type ColumnDef = {
   group: GroupKey;
   label: string;
   render: (item: Row) => React.ReactNode;
+  sortValue: (item: Row) => SortValue;
 };
 
 const COLUMNS: ColumnDef[] = [
   // Encabezado
-  { key: "quantity", group: "encabezado", label: "Cant.", render: (i) => <span className="[font-variant-numeric:tabular-nums]">{i.quantity}</span> },
-  { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} /> },
-  { key: "data_status", group: "encabezado", label: "Datos", render: (i) => dataStatusBadge(i.data_status) },
+  {
+    key: "quantity",
+    group: "encabezado",
+    label: "Cant.",
+    render: (i) => <span className="[font-variant-numeric:tabular-nums]">{i.quantity}</span>,
+    sortValue: (i) => i.quantity,
+  },
+  { key: "status", group: "encabezado", label: "Venta", render: (i) => <StatusBadge status={i.status} />, sortValue: (i) => i.status },
+  {
+    key: "data_status",
+    group: "encabezado",
+    label: "Datos",
+    render: (i) => dataStatusBadge(i.data_status),
+    sortValue: (i) => i.data_status,
+  },
   // Descripción
-  { key: "type", group: "descripcion", label: "Tipo", render: (i) => text(i.type) },
-  { key: "location", group: "descripcion", label: "Ubicación", render: (i) => text(i.location) },
-  { key: "brand", group: "descripcion", label: "Marca", render: (i) => text(i.brand) },
-  { key: "model", group: "descripcion", label: "Modelo", render: (i) => text(i.model) },
-  { key: "serial_number", group: "descripcion", label: "Serie", render: (i) => text(i.serial_number) },
-  { key: "dimensions", group: "descripcion", label: "Dimensiones", render: (i) => text(formatDimensions(i)) },
-  { key: "description", group: "descripcion", label: "Detalles", render: (i) => text(i.description) },
+  { key: "type", group: "descripcion", label: "Tipo", render: (i) => text(i.type), sortValue: (i) => i.type },
+  { key: "location", group: "descripcion", label: "Ubicación", render: (i) => text(i.location), sortValue: (i) => i.location },
+  { key: "brand", group: "descripcion", label: "Marca", render: (i) => text(i.brand), sortValue: (i) => i.brand },
+  { key: "model", group: "descripcion", label: "Modelo", render: (i) => text(i.model), sortValue: (i) => i.model },
+  { key: "serial_number", group: "descripcion", label: "Serie", render: (i) => text(i.serial_number), sortValue: (i) => i.serial_number },
+  {
+    key: "dimensions",
+    group: "descripcion",
+    label: "Dimensiones",
+    render: (i) => text(formatDimensions(i)),
+    sortValue: (i) => formatDimensions(i),
+  },
+  { key: "description", group: "descripcion", label: "Detalles", render: (i) => text(i.description), sortValue: (i) => i.description },
   // Estado del artículo
   {
     key: "condition_rating",
     group: "estado",
     label: "Condición",
     render: (i) => (i.condition_rating ? <ConditionBadge rating={i.condition_rating} /> : <span className="text-ink-faint">—</span>),
+    sortValue: (i) => (i.condition_rating ? CONDITION_RANK[i.condition_rating] : null),
   },
-  { key: "years_in_use", group: "estado", label: "Años", render: (i) => (i.years_in_use != null ? i.years_in_use : <span className="text-ink-faint">—</span>) },
+  {
+    key: "years_in_use",
+    group: "estado",
+    label: "Años",
+    render: (i) => (i.years_in_use != null ? i.years_in_use : <span className="text-ink-faint">—</span>),
+    sortValue: (i) => i.years_in_use,
+  },
   {
     key: "condition_notes",
     group: "estado",
@@ -146,13 +180,26 @@ const COLUMNS: ColumnDef[] = [
         )}
       </>
     ),
+    sortValue: (i) => i.notesRest,
   },
-  { key: "maintenance_notes", group: "estado", label: "Notas de mantenimiento", render: (i) => text(i.maintenance_notes) },
+  {
+    key: "maintenance_notes",
+    group: "estado",
+    label: "Notas de mantenimiento",
+    render: (i) => text(i.maintenance_notes),
+    sortValue: (i) => i.maintenance_notes,
+  },
   // Precio
-  { key: "purchase_price", group: "precio", label: "Compra", render: (i) => money(i.purchase_price) },
-  { key: "reference_price", group: "precio", label: "Referencia", render: (i) => money(i.reference_price) },
-  { key: "suggested_resale_price", group: "precio", label: "Sugerido", render: (i) => money(i.suggested_resale_price) },
-  { key: "asking_price", group: "precio", label: "Público", render: (i) => money(i.asking_price) },
+  { key: "purchase_price", group: "precio", label: "Compra", render: (i) => money(i.purchase_price), sortValue: (i) => i.purchase_price },
+  { key: "reference_price", group: "precio", label: "Referencia", render: (i) => money(i.reference_price), sortValue: (i) => i.reference_price },
+  {
+    key: "suggested_resale_price",
+    group: "precio",
+    label: "Sugerido",
+    render: (i) => money(i.suggested_resale_price),
+    sortValue: (i) => i.suggested_resale_price,
+  },
+  { key: "asking_price", group: "precio", label: "Público", render: (i) => money(i.asking_price), sortValue: (i) => i.asking_price },
   {
     key: "discount_pct",
     group: "precio",
@@ -163,15 +210,23 @@ const COLUMNS: ColumnDef[] = [
       ) : (
         <span className="text-ink-faint">—</span>
       ),
+    sortValue: (i) => i.discount_pct,
   },
   {
     key: "has_factura",
     group: "precio",
     label: "Factura",
     render: (i) => (i.has_factura == null ? <span className="text-ink-faint">—</span> : i.has_factura ? "Sí" : "No"),
+    sortValue: (i) => (i.has_factura == null ? null : i.has_factura ? 1 : 0),
   },
-  { key: "factura_cfdi", group: "precio", label: "CFDI", render: (i) => text(i.factura_cfdi) },
-  { key: "factura_pdf", group: "precio", label: "PDF", render: (i) => <FacturaPdfLink path={i.factura_pdf} /> },
+  { key: "factura_cfdi", group: "precio", label: "CFDI", render: (i) => text(i.factura_cfdi), sortValue: (i) => i.factura_cfdi },
+  {
+    key: "factura_pdf",
+    group: "precio",
+    label: "PDF",
+    render: (i) => <FacturaPdfLink path={i.factura_pdf} />,
+    sortValue: (i) => (i.factura_pdf ? 1 : 0),
+  },
   // Fotos y referencias
   {
     key: "photos",
@@ -192,6 +247,7 @@ const COLUMNS: ColumnDef[] = [
         </span>
       </div>
     ),
+    sortValue: (i) => i.photoCount,
   },
   {
     key: "links",
@@ -202,8 +258,55 @@ const COLUMNS: ColumnDef[] = [
         {i.linkCount}
       </span>
     ),
+    sortValue: (i) => i.linkCount,
   },
 ];
+
+// The two pinned columns (always shown, outside the group-toggle
+// system) are sortable too — same {key,label,sortValue} shape as
+// COLUMNS, just rendered/positioned separately since they frame the
+// table rather than belonging to a section.
+const PINNED_START = { key: "name", label: "Artículo", sortValue: (i: Row) => getDisplayName(i) };
+const PINNED_END = { key: "updated_at", label: "Actualizado", sortValue: (i: Row) => i.updated_at };
+
+const SORT_ACCESSORS: Record<string, (item: Row) => SortValue> = Object.fromEntries(
+  [PINNED_START, ...COLUMNS, PINNED_END].map((c) => [c.key, c.sortValue]),
+);
+
+function compareValues(a: SortValue, b: SortValue, dir: SortDir): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  const cmp = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "es");
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function SortableTh({
+  colKey,
+  label,
+  active,
+  dir,
+  onSort,
+}: {
+  colKey: string;
+  label: string;
+  active: boolean;
+  dir: SortDir | undefined;
+  onSort: (key: string) => void;
+}) {
+  return (
+    <th className="px-2.5 py-2">
+      <button
+        type="button"
+        onClick={() => onSort(colKey)}
+        className={`flex items-center gap-1 whitespace-nowrap ${active ? "text-ink" : "text-ink-soft hover:text-ink"}`}
+      >
+        {label}
+        <span className={active ? "text-ink" : "text-ink-faint"}>{active ? (dir === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
 
 export default function RevisionList() {
   const supabase = createClient();
@@ -215,6 +318,10 @@ export default function RevisionList() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Keyed by área — each área's table sorts independently, since they're
+  // rendered as separate <table>s and there's no reason picking a sort
+  // for Cocina should touch Piso's.
+  const [sortState, setSortState] = useState<Record<string, { key: string; dir: SortDir }>>({});
   // All five sections visible by default — "show every column", with the
   // ability to shrink the table down to just the section(s) in question
   // once it's clearly too wide to scan at once.
@@ -315,6 +422,21 @@ export default function RevisionList() {
 
   function toggleArea(area: string) {
     setCollapsed((prev) => ({ ...prev, [area]: !prev[area] }));
+  }
+
+  function handleSort(area: string, key: string) {
+    setSortState((prev) => {
+      const current = prev[area];
+      const dir: SortDir = current && current.key === key && current.dir === "asc" ? "desc" : "asc";
+      return { ...prev, [area]: { key, dir } };
+    });
+  }
+
+  function sortRows(rows: Row[], area: string): Row[] {
+    const sort = sortState[area];
+    const accessor = sort && SORT_ACCESSORS[sort.key];
+    if (!sort || !accessor) return rows;
+    return [...rows].sort((a, b) => compareValues(accessor(a), accessor(b), sort.dir));
   }
 
   function toggleGroup(key: GroupKey) {
@@ -420,18 +542,35 @@ export default function RevisionList() {
                         <table className="w-full border-collapse" style={{ minWidth: tableMinWidth }}>
                           <thead>
                             <tr className="border-b border-line bg-page/60 text-left text-[10px] font-bold tracking-wide text-ink-soft uppercase">
-                              <th className="px-2.5 py-2">Artículo</th>
+                              <SortableTh
+                                colKey={PINNED_START.key}
+                                label={PINNED_START.label}
+                                active={sortState[area]?.key === PINNED_START.key}
+                                dir={sortState[area]?.key === PINNED_START.key ? sortState[area]?.dir : undefined}
+                                onSort={(key) => handleSort(area, key)}
+                              />
                               {activeColumns.map((c) => (
-                                <th key={c.key} className="px-2.5 py-2">
-                                  {c.label}
-                                </th>
+                                <SortableTh
+                                  key={c.key}
+                                  colKey={c.key}
+                                  label={c.label}
+                                  active={sortState[area]?.key === c.key}
+                                  dir={sortState[area]?.key === c.key ? sortState[area]?.dir : undefined}
+                                  onSort={(key) => handleSort(area, key)}
+                                />
                               ))}
-                              <th className="px-2.5 py-2">Actualizado</th>
+                              <SortableTh
+                                colKey={PINNED_END.key}
+                                label={PINNED_END.label}
+                                active={sortState[area]?.key === PINNED_END.key}
+                                dir={sortState[area]?.key === PINNED_END.key ? sortState[area]?.dir : undefined}
+                                onSort={(key) => handleSort(area, key)}
+                              />
                               <th className="px-2.5 py-2">Abrir</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {rows.map((item) => {
+                            {sortRows(rows, area).map((item) => {
                               const displayName = getDisplayName(item);
                               return (
                                 <tr
