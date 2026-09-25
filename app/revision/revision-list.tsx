@@ -723,28 +723,37 @@ function compareValues(a: SortValue, b: SortValue, dir: SortDir): number {
   return dir === "asc" ? cmp : -cmp;
 }
 
-// `sticky` freezes just the Artículo column — the table gets wide
-// enough that losing track of which row is which while scrolling right
-// defeats the point of showing every column. Needs an OPAQUE background
-// (not the header row's bg-page/60) since a sticky cell has to actually
-// occlude whatever scrolls underneath it, not just tint it.
+// Artículo and Ref. are both frozen — the table gets wide enough that
+// losing track of which row (and its sticker code) is which while
+// scrolling right defeats the point of showing every column. Each
+// needs an OPAQUE background (not the header row's bg-page/60) since a
+// sticky cell has to actually occlude whatever scrolls underneath it,
+// not just tint it, and a fixed width so Ref.'s `left` offset (exactly
+// Artículo's width) never drifts out of alignment with it.
+const ARTICULO_COL_WIDTH = 180;
+const REF_COL_WIDTH = 110;
+
 function SortableTh({
   colKey,
   label,
   active,
   dir,
   onSort,
-  sticky = false,
+  stickyLeft,
+  width,
 }: {
   colKey: string;
   label: string;
   active: boolean;
   dir: SortDir | undefined;
   onSort: (key: string) => void;
-  sticky?: boolean;
+  stickyLeft?: number;
+  width?: number;
 }) {
+  const style: React.CSSProperties | undefined =
+    stickyLeft != null ? { left: stickyLeft, width, minWidth: width } : width != null ? { width, minWidth: width } : undefined;
   return (
-    <th className={`px-2.5 py-2 ${sticky ? "sticky left-0 z-20 min-w-[160px] border-r border-line bg-page" : ""}`}>
+    <th className={`px-2.5 py-2 ${stickyLeft != null ? "sticky z-20 border-r border-line bg-page" : ""}`} style={style}>
       <button
         type="button"
         onClick={() => onSort(colKey)}
@@ -1175,7 +1184,8 @@ export default function RevisionList() {
                                 active={sortState[area]?.key === PINNED_START.key}
                                 dir={sortState[area]?.key === PINNED_START.key ? sortState[area]?.dir : undefined}
                                 onSort={(key) => handleSort(area, key)}
-                                sticky
+                                stickyLeft={0}
+                                width={ARTICULO_COL_WIDTH}
                               />
                               <SortableTh
                                 colKey={PINNED_REF.key}
@@ -1183,6 +1193,8 @@ export default function RevisionList() {
                                 active={sortState[area]?.key === PINNED_REF.key}
                                 dir={sortState[area]?.key === PINNED_REF.key ? sortState[area]?.dir : undefined}
                                 onSort={(key) => handleSort(area, key)}
+                                stickyLeft={ARTICULO_COL_WIDTH}
+                                width={REF_COL_WIDTH}
                               />
                               {activeColumns.map((c) => (
                                 <SortableTh
@@ -1209,18 +1221,27 @@ export default function RevisionList() {
                               const revisar = extractRevisar(item.condition_notes).revisar;
                               return (
                                 <tr key={item.id} className={`border-b border-line text-sm last:border-0 ${revisar ? "bg-negative/5" : ""}`}>
-                                  {/* Frozen column: opaque bg-card so it occludes
-                                      cells scrolling underneath — this is why it
-                                      doesn't pick up the row's own bg-negative/5
-                                      tint the way the rest of a flagged row does. */}
-                                  <td className="sticky left-0 z-10 min-w-[160px] border-r border-line bg-card px-2.5 py-2 align-top font-semibold text-ink">
+                                  {/* Both frozen columns: opaque bg-card so each
+                                      occludes cells scrolling underneath — this is
+                                      why they don't pick up the row's own
+                                      bg-negative/5 tint the way the rest of a
+                                      flagged row does. Ref.'s left offset is
+                                      exactly Artículo's width, so they sit flush. */}
+                                  <td
+                                    className="sticky z-10 border-r border-line bg-card px-2.5 py-2 align-top font-semibold text-ink"
+                                    style={{ left: 0, width: ARTICULO_COL_WIDTH, minWidth: ARTICULO_COL_WIDTH }}
+                                  >
                                     <InlineText
                                       value={item.name}
                                       className="font-semibold"
                                       onCommit={(v) => writeField(item.id, "name", v.trim() || item.name, item.name)}
                                     />
                                   </td>
-                                  <td className="px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft" title="No se puede modificar">
+                                  <td
+                                    className="sticky z-10 border-r border-line bg-card px-2.5 py-2 align-top font-mono text-xs whitespace-nowrap text-ink-soft"
+                                    style={{ left: ARTICULO_COL_WIDTH, width: REF_COL_WIDTH, minWidth: REF_COL_WIDTH }}
+                                    title="No se puede modificar"
+                                  >
                                     {item.ref_code ?? "—"}
                                   </td>
                                   {activeColumns.map((c) => (
