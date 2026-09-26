@@ -884,6 +884,61 @@ function parseSearchTerms(raw: string): { phrases: string[]; words: string[] } {
   return { phrases, words };
 }
 
+// Searches both gasto_lines.descripcion and gasto_notas.proveedor_nombre
+// — the placeholder says "Descripción, proveedor..." but until this, the
+// query only ever touched descripcion, so a line whose own text never
+// mentions its supplier (the common case — "Cocoa En Polvo Hershey's"
+// bought from "Cesar Ramirez Mendez" has no reason to say so) was
+// unreachable by proveedor name at all. Two separate indexed queries
+// (both trigram-accelerated — see db/migrations/0023 and 0026) rather
+// than one filter spanning the join: an earlier attempt at an OR across
+// gasto_lines and its embedded gasto_notas in a single PostgREST call
+// either failed to parse or, unindexed, timed out.
+//
+// Each term must appear in descripcion, OR each term must appear in
+// proveedor_nombre — not "each term in either field", which would need
+// per-word OR-across-tables that PostgREST doesn't offer a clean way to
+// express. Good enough for how this is actually used: searching by a
+// description keyword and searching by a supplier name are two
+// different intents, not usually mixed in one query.
+async function searchGastoLines(
+  supabase: ReturnType<typeof createClient>,
+  terms: string[],
+): Promise<GastoLine[]> {
+  if (terms.length === 0) return [];
+
+  let descQuery = supabase.from("gasto_lines").select(GASTO_LINE_FIELDS);
+  for (const t of terms) descQuery = descQuery.ilike("descripcion", `%${t}%`);
+
+  let provQuery = supabase.from("gasto_notas").select("uid_gasto");
+  for (const t of terms) provQuery = provQuery.ilike("proveedor_nombre", `%${t}%`);
+
+  const [descRes, provRes] = await Promise.all([
+    descQuery.order("fecha_op", { ascending: false }).limit(30),
+    provQuery.limit(30),
+  ]);
+
+  const byId = new Map<string, GastoLine>();
+  for (const row of (descRes.data ?? []) as unknown as GastoLine[]) byId.set(row.uid_itemc, row);
+
+  const notaIds = (provRes.data ?? []).map((r) => r.uid_gasto);
+  if (notaIds.length > 0) {
+    const { data: byProveedor } = await supabase
+      .from("gasto_lines")
+      .select(GASTO_LINE_FIELDS)
+      .in("uid_nota", notaIds)
+      .order("fecha_op", { ascending: false })
+      .limit(30);
+    for (const row of (byProveedor ?? []) as unknown as GastoLine[]) {
+      if (!byId.has(row.uid_itemc)) byId.set(row.uid_itemc, row);
+    }
+  }
+
+  return [...byId.values()]
+    .sort((a, b) => (b.fecha_op ?? "").localeCompare(a.fecha_op ?? ""))
+    .slice(0, 30);
+}
+
 function BuscarSheet({
   supabase,
   onClose,
@@ -914,12 +969,9 @@ function BuscarSheet({
     const handle = setTimeout(async () => {
       const q = query.trim();
       const { phrases, words } = parseSearchTerms(q);
-      let request = supabase.from("gasto_lines").select(GASTO_LINE_FIELDS);
-      for (const phrase of phrases) request = request.ilike("descripcion", `%${phrase}%`);
-      for (const word of words) request = request.ilike("descripcion", `%${word}%`);
-      const { data } = await request.order("fecha_op", { ascending: false }).limit(30);
+      const data = await searchGastoLines(supabase, [...phrases, ...words]);
       if (!cancelled) {
-        setResults((data ?? []) as unknown as GastoLine[]);
+        setResults(data);
         setResultsForQuery(q);
       }
     }, 300);
