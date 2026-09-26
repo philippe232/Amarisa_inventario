@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
@@ -33,7 +33,9 @@ const PRICE_REFERENCE_THRESHOLD = 500; // decision #1 — cheap bulk items get t
 // sync with GastoLine/GastoNota in lib/gasto-matching/types.ts, minus `raw`.
 const GASTO_NOTA_FIELDS =
   "uid_gasto,ref_notac,ref_proveedor,proveedor_nombre,fecha_op,locacion,area,total_neto,factura_timbrada,cfdi_raw,cfdi_uuid,cfdi_resolved,cfdi_source,cfdi_conflict,cfdi_suspect,comentario,foto_url";
-const GASTO_LINE_FIELDS = `uid_itemc,uid_nota,ref_notac,descripcion,fecha_op,locacion,area,uds,precio_por_ud,total_neto,ref_proveedor,clase,categoria,subcategoria,tipo,comentarios,is_candidate,gasto_notas(${GASTO_NOTA_FIELDS})`;
+const GASTO_LINE_OWN_FIELDS =
+  "uid_itemc,uid_nota,ref_notac,descripcion,fecha_op,locacion,area,uds,precio_por_ud,total_neto,ref_proveedor,clase,categoria,subcategoria,tipo,comentarios,is_candidate";
+const GASTO_LINE_FIELDS = `${GASTO_LINE_OWN_FIELDS},gasto_notas(${GASTO_NOTA_FIELDS})`;
 
 type QueueItem = Pick<
   Item,
@@ -939,42 +941,132 @@ function parseSearchTerms(raw: string): { phrases: string[]; words: string[] } {
 // express. Good enough for how this is actually used: searching by a
 // description keyword and searching by a supplier name are two
 // different intents, not usually mixed in one query.
+type SearchCriteria = {
+  terms: string[];
+  proveedor: string;
+  montoMin: number | null;
+  montoMax: number | null;
+  fechaDesde: string | null;
+  fechaHasta: string | null;
+};
+
+function hasSearchCriteria(c: SearchCriteria): boolean {
+  return (
+    c.terms.length > 0 ||
+    c.proveedor.trim() !== "" ||
+    c.montoMin != null ||
+    c.montoMax != null ||
+    Boolean(c.fechaDesde) ||
+    Boolean(c.fechaHasta)
+  );
+}
+
+// A join across gasto_lines -> gasto_notas!inner, filtering on the
+// embedded proveedor_nombre alongside a descripcion ilike and the
+// monto/fecha range, reliably times out (confirmed directly against the
+// endpoint — even with proveedor_nombre now indexed, see 0026). Same
+// workaround as the plain proveedor search: resolve proveedor_nombre to
+// a set of uid_gasto up front with its own indexed single-table query,
+// then constrain every other query by uid_nota IN (...) instead of
+// joining.
+// Both fields on the return: a Postgres/PostgREST error (a timeout, most
+// likely — see 0027) must reach the UI as an actual error, not get read
+// as "no rows" the way `data ?? []` alone would silently do. Only the
+// first error hit is kept; good enough to tell the admin something's
+// wrong without needing to aggregate every branch's own failure.
 async function searchGastoLines(
   supabase: ReturnType<typeof createClient>,
-  terms: string[],
-): Promise<GastoLine[]> {
-  if (terms.length === 0) return [];
+  criteria: SearchCriteria,
+): Promise<{ data: GastoLine[]; error: string | null }> {
+  if (!hasSearchCriteria(criteria)) return { data: [], error: null };
+  const { terms, proveedor, montoMin, montoMax, fechaDesde, fechaHasta } = criteria;
+  let firstError: string | null = null;
 
-  let descQuery = supabase.from("gasto_lines").select(GASTO_LINE_FIELDS);
-  for (const t of terms) descQuery = descQuery.ilike("descripcion", `%${t}%`);
+  function applyRangeFilters<Q extends { gte: (c: string, v: unknown) => Q; lte: (c: string, v: unknown) => Q }>(q: Q): Q {
+    if (montoMin != null) q = q.gte("total_neto", montoMin);
+    if (montoMax != null) q = q.lte("total_neto", montoMax);
+    if (fechaDesde) q = q.gte("fecha_op", fechaDesde);
+    if (fechaHasta) q = q.lte("fecha_op", fechaHasta);
+    return q;
+  }
 
-  let provQuery = supabase.from("gasto_notas").select("uid_gasto");
-  for (const t of terms) provQuery = provQuery.ilike("proveedor_nombre", `%${t}%`);
-
-  const [descRes, provRes] = await Promise.all([
-    descQuery.order("fecha_op", { ascending: false }).limit(30),
-    provQuery.limit(30),
-  ]);
+  let proveedorNotaIds: string[] | null = null;
+  if (proveedor.trim()) {
+    const { data, error } = await supabase.from("gasto_notas").select("uid_gasto").ilike("proveedor_nombre", `%${proveedor.trim()}%`).limit(500);
+    if (error) return { data: [], error: error.message };
+    proveedorNotaIds = (data ?? []).map((r) => r.uid_gasto);
+    if (proveedorNotaIds.length === 0) return { data: [], error: null }; // that supplier name matches nothing — nothing else can either
+  }
 
   const byId = new Map<string, GastoLine>();
-  for (const row of (descRes.data ?? []) as unknown as GastoLine[]) byId.set(row.uid_itemc, row);
 
-  const notaIds = (provRes.data ?? []).map((r) => r.uid_gasto);
+  if (terms.length > 0) {
+    // Branch A (descripcion text) and Branch B's first step (resolving
+    // which notas match the terms by proveedor_nombre) don't depend on
+    // each other — run them concurrently rather than one-await-at-a-
+    // time, since each round trip costs real latency under RLS/
+    // PostgREST (a few seconds, worse right after this project has sat
+    // idle — see below). Only B's own follow-up (fetching the lines for
+    // whichever notas matched) has to wait on that first query.
+    let descQuery = supabase.from("gasto_lines").select(GASTO_LINE_OWN_FIELDS);
+    for (const t of terms) descQuery = descQuery.ilike("descripcion", `%${t}%`);
+    if (proveedorNotaIds) descQuery = descQuery.in("uid_nota", proveedorNotaIds);
+    descQuery = applyRangeFilters(descQuery);
+
+    let provNotaQuery = supabase.from("gasto_notas").select("uid_gasto");
+    for (const t of terms) provNotaQuery = provNotaQuery.ilike("proveedor_nombre", `%${t}%`);
+
+    const [descRes, provNotasRes] = await Promise.all([
+      descQuery.order("fecha_op", { ascending: false }).limit(30),
+      provNotaQuery.limit(60),
+    ]);
+    firstError ??= descRes.error?.message ?? provNotasRes.error?.message ?? null;
+    for (const row of (descRes.data ?? []) as unknown as GastoLine[]) byId.set(row.uid_itemc, row);
+
+    let notaIds = (provNotasRes.data ?? []).map((r) => r.uid_gasto);
+    if (proveedorNotaIds) notaIds = notaIds.filter((id) => proveedorNotaIds!.includes(id));
+    if (notaIds.length > 0) {
+      let lineQuery = supabase.from("gasto_lines").select(GASTO_LINE_OWN_FIELDS).in("uid_nota", notaIds);
+      lineQuery = applyRangeFilters(lineQuery);
+      const { data: byProveedor, error } = await lineQuery.order("fecha_op", { ascending: false }).limit(30);
+      firstError ??= error?.message ?? null;
+      for (const row of (byProveedor ?? []) as unknown as GastoLine[]) {
+        if (!byId.has(row.uid_itemc)) byId.set(row.uid_itemc, row);
+      }
+    }
+  } else {
+    // No free-text terms — just the proveedor filter and/or the range
+    // filters, applied directly.
+    let q = supabase.from("gasto_lines").select(GASTO_LINE_OWN_FIELDS);
+    if (proveedorNotaIds) q = q.in("uid_nota", proveedorNotaIds);
+    q = applyRangeFilters(q);
+    const { data, error } = await q.order("fecha_op", { ascending: false }).limit(30);
+    firstError ??= error?.message ?? null;
+    for (const row of (data ?? []) as unknown as GastoLine[]) byId.set(row.uid_itemc, row);
+  }
+
+  const lines = [...byId.values()]
+    .sort((a, b) => (b.fecha_op ?? "").localeCompare(a.fecha_op ?? ""))
+    .slice(0, 30);
+
+  // gasto_notas attached as its own lookup, not a nested select — a
+  // gasto_lines(...,gasto_notas(...)) embed reliably times out once a
+  // range filter matches more than a handful of rows (confirmed
+  // directly: fine via plain SQL, ~11s+ via PostgREST, even indexed —
+  // same shape of problem as the proveedor join above, worked around
+  // the same way). Cheap here regardless: at most 30 lines, so at most
+  // 30 distinct notas to look up.
+  const notaIds = [...new Set(lines.map((l) => l.uid_nota))];
   if (notaIds.length > 0) {
-    const { data: byProveedor } = await supabase
-      .from("gasto_lines")
-      .select(GASTO_LINE_FIELDS)
-      .in("uid_nota", notaIds)
-      .order("fecha_op", { ascending: false })
-      .limit(30);
-    for (const row of (byProveedor ?? []) as unknown as GastoLine[]) {
-      if (!byId.has(row.uid_itemc)) byId.set(row.uid_itemc, row);
+    const { data: notas, error } = await supabase.from("gasto_notas").select(GASTO_NOTA_FIELDS).in("uid_gasto", notaIds);
+    firstError ??= error?.message ?? null;
+    const notaById = new Map((notas ?? []).map((n) => [n.uid_gasto, n]));
+    for (const line of lines) {
+      line.gasto_notas = (notaById.get(line.uid_nota) as GastoLine["gasto_notas"]) ?? null;
     }
   }
 
-  return [...byId.values()]
-    .sort((a, b) => (b.fecha_op ?? "").localeCompare(a.fecha_op ?? ""))
-    .slice(0, 30);
+  return { data: lines, error: firstError };
 }
 
 function BuscarSheet({
@@ -987,37 +1079,61 @@ function BuscarSheet({
   onPick: (line: GastoLine) => void;
 }) {
   const [query, setQuery] = useState("");
-  // Holds the last real fetch — never reset to [] for a too-short query,
-  // since the render below already masks it via `visibleResults` instead.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [proveedor, setProveedor] = useState("");
+  const [montoMin, setMontoMin] = useState("");
+  const [montoMax, setMontoMax] = useState("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+
+  const criteria: SearchCriteria = useMemo(() => {
+    const { phrases, words } = parseSearchTerms(query.trim());
+    return {
+      terms: [...phrases, ...words],
+      proveedor,
+      montoMin: montoMin.trim() === "" ? null : Number(montoMin),
+      montoMax: montoMax.trim() === "" ? null : Number(montoMax),
+      fechaDesde: fechaDesde || null,
+      fechaHasta: fechaHasta || null,
+    };
+  }, [query, proveedor, montoMin, montoMax, fechaDesde, fechaHasta]);
+  const hasCriteria = hasSearchCriteria(criteria);
+
+  // Holds the last real fetch — never reset to [] once criteria stop
+  // matching anything, since the render below already masks it via
+  // `visibleResults` instead.
   const [results, setResults] = useState<GastoLine[]>([]);
-  // The query `results` actually corresponds to — compared against the
-  // live `query` at render time to derive "searching" (below) instead of
-  // a separate setState call at the top of the effect, which this
-  // project's react-hooks/set-state-in-effect rule rejects: every
-  // setState here happens inside the async fetch's own resolution, never
-  // synchronously in the effect body.
-  const [resultsForQuery, setResultsForQuery] = useState("");
-  const queryTooShort = query.trim().length < 2;
-  const visibleResults = queryTooShort ? [] : results;
-  const searching = !queryTooShort && resultsForQuery !== query.trim();
+  // The criteria `results` actually correspond to — compared by
+  // reference against the live (useMemo'd, so referentially stable
+  // across renders where none of its inputs changed) `criteria` to
+  // derive "searching" below, instead of a separate setState call at
+  // the top of the effect, which this project's react-hooks/set-state-
+  // in-effect rule rejects: every setState here happens inside the
+  // async fetch's own resolution, never synchronously in the effect
+  // body.
+  const [resultsForCriteria, setResultsForCriteria] = useState<SearchCriteria | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const visibleResults = hasCriteria ? results : [];
+  const searching = hasCriteria && resultsForCriteria !== criteria;
 
   useEffect(() => {
-    if (queryTooShort) return;
+    if (!hasCriteria) return;
     let cancelled = false;
     const handle = setTimeout(async () => {
-      const q = query.trim();
-      const { phrases, words } = parseSearchTerms(q);
-      const data = await searchGastoLines(supabase, [...phrases, ...words]);
+      const { data, error } = await searchGastoLines(supabase, criteria);
       if (!cancelled) {
         setResults(data);
-        setResultsForQuery(q);
+        setSearchError(error);
+        setResultsForCriteria(criteria);
       }
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [query, queryTooShort, supabase]);
+  }, [criteria, hasCriteria, supabase]);
+
+  const activeFilterCount = [proveedor.trim(), montoMin.trim(), montoMax.trim(), fechaDesde, fechaHasta].filter(Boolean).length;
 
   return (
     <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
@@ -1028,16 +1144,98 @@ function BuscarSheet({
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder='Descripción, proveedor... o "texto exacto"'
-          className="h-10 w-full rounded-md border border-line-strong px-3 text-sm"
-        />
+        <div className="flex gap-2">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder='Descripción, proveedor... o "texto exacto"'
+            className="h-10 min-w-0 flex-1 rounded-md border border-line-strong px-3 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-label="Filtros de búsqueda"
+            className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md border text-ink ${
+              filtersOpen ? "border-ink bg-page" : "border-line-strong bg-card"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+            {activeFilterCount > 0 && <span aria-hidden className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-ink" />}
+          </button>
+        </div>
+
+        {filtersOpen && (
+          <div className="mt-3 space-y-3 rounded-md border border-line bg-page p-3">
+            <label className="block">
+              <span className="text-xs font-medium text-ink-soft">Proveedor</span>
+              <input
+                value={proveedor}
+                onChange={(e) => setProveedor(e.target.value)}
+                placeholder="Nombre del proveedor"
+                className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs font-medium text-ink-soft">Monto mínimo</span>
+                <input
+                  type="number"
+                  value={montoMin}
+                  onChange={(e) => setMontoMin(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-ink-soft">Monto máximo</span>
+                <input
+                  type="number"
+                  value={montoMax}
+                  onChange={(e) => setMontoMax(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-ink-soft">Desde</span>
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-ink-soft">Hasta</span>
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                />
+              </label>
+            </div>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setProveedor("");
+                  setMontoMin("");
+                  setMontoMax("");
+                  setFechaDesde("");
+                  setFechaHasta("");
+                }}
+                className="text-xs font-semibold text-ink-soft underline"
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
           {searching && <p className="text-sm text-ink-soft">Buscando...</p>}
-          {!searching && !queryTooShort && visibleResults.length === 0 && <p className="text-sm text-ink-soft">Sin resultados.</p>}
+          {!searching && searchError && <p className="text-sm text-red-600">Error al buscar: {searchError}</p>}
+          {!searching && !searchError && hasCriteria && visibleResults.length === 0 && <p className="text-sm text-ink-soft">Sin resultados.</p>}
           {visibleResults.map((line) => (
             <button
               key={line.uid_itemc}
