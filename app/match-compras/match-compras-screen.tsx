@@ -209,6 +209,41 @@ export default function MatchComprasScreen() {
 
   const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
 
+  // "Descartar" — this candidate is definitely not the purchase for this
+  // item. Removes it from item_match_candidates right away (so it's just
+  // gone, not merely hidden) and records the exclusion in
+  // item_candidate_rejections so a future Recalcular never re-suggests
+  // it, even though that table's own rows get freely deleted/reinserted
+  // on every recompute. Batched: also used to auto-reject every OTHER
+  // candidate the moment one gets chosen (see saveMatch) — Recalcular
+  // itself is unaffected either way, since it already skips confirmado
+  // items entirely and, for anything else, these rejections simply keep
+  // excluding the same lines they always would.
+  async function rejectCandidates(itemId: string, candidates: ItemMatchCandidate[]) {
+    if (candidates.length === 0) return;
+    const rejectedIds = new Set(candidates.map((c) => c.id));
+    setCandidatesByItem((prev) => {
+      const next = new Map(prev);
+      next.set(itemId, (next.get(itemId) ?? []).filter((c) => !rejectedIds.has(c.id)));
+      return next;
+    });
+
+    const [{ error: deleteError }, { error: insertError }] = await Promise.all([
+      supabase
+        .from("item_match_candidates")
+        .delete()
+        .in("id", [...rejectedIds]),
+      supabase.from("item_candidate_rejections").insert(candidates.map((c) => ({ item_id: itemId, uid_itemc: c.uid_itemc, rejected_by: email }))),
+    ]);
+    if (deleteError || insertError) {
+      setError(deleteError?.message ?? insertError?.message ?? "No se pudo descartar");
+    }
+  }
+
+  async function handleReject(itemId: string, candidate: ItemMatchCandidate) {
+    await rejectCandidates(itemId, [candidate]);
+  }
+
   // --- write-back ----------------------------------------------------
   async function saveMatch(itemId: string, patch: Omit<ItemPurchaseMatch, "id" | "item_id" | "is_active" | "reviewed_by" | "reviewed_at">) {
     const existing = activeMatchByItem.get(itemId);
@@ -238,27 +273,15 @@ export default function MatchComprasScreen() {
 
     setActiveMatchByItem((prev) => new Map(prev).set(itemId, data as ItemPurchaseMatch));
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, ...itemPatch } : i)));
-  }
 
-  // "Descartar" — this candidate is definitely not the purchase for this
-  // item. Removes it from item_match_candidates right away (so it's just
-  // gone, not merely hidden) and records the exclusion in
-  // item_candidate_rejections so a future Recalcular never re-suggests
-  // it, even though that table's own rows get freely deleted/reinserted
-  // on every recompute.
-  async function handleReject(itemId: string, candidate: ItemMatchCandidate) {
-    setCandidatesByItem((prev) => {
-      const next = new Map(prev);
-      next.set(itemId, (next.get(itemId) ?? []).filter((c) => c.id !== candidate.id));
-      return next;
-    });
-
-    const [{ error: deleteError }, { error: insertError }] = await Promise.all([
-      supabase.from("item_match_candidates").delete().eq("id", candidate.id),
-      supabase.from("item_candidate_rejections").insert({ item_id: itemId, uid_itemc: candidate.uid_itemc, rejected_by: email }),
-    ]);
-    if (deleteError || insertError) {
-      setError(deleteError?.message ?? insertError?.message ?? "No se pudo descartar");
+    // Elegir on a candidate is a definitive pick — every other candidate
+    // still on the list for this item is, implicitly, wrong. Doesn't run
+    // for Sin registro (patch.uid_itemc is null there): "no record
+    // exists" says nothing about whether any candidate was close, so
+    // nothing gets auto-rejected.
+    if (patch.uid_itemc) {
+      const others = (candidatesByItem.get(itemId) ?? []).filter((c) => c.uid_itemc !== patch.uid_itemc);
+      await rejectCandidates(itemId, others);
     }
   }
 
