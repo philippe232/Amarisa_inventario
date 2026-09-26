@@ -69,7 +69,15 @@ export default function MatchComprasScreen() {
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [tierFiltro, setTierFiltro] = useState<Set<MatchTier>>(new Set());
+  // "Confirmado" lives in this filter's value domain too (see the
+  // filteredItems check below) — not a separate concept from Estado de
+  // revisión's own "confirmado", just a second, convenient entry point
+  // into the same underlying item_purchase_matches.status so "show me
+  // my remaining Fuerte matches" doesn't stay cluttered with ones
+  // already confirmed (whose cached tier is frozen at whatever it was
+  // when Recalcular last skipped them, whether that still reads
+  // "fuerte" or not).
+  const [tierFiltro, setTierFiltro] = useState<Set<MatchTier | "confirmado">>(new Set());
   const [areaFiltro, setAreaFiltro] = useState<Set<string>>(new Set());
   const [statusFiltro, setStatusFiltro] = useState<Set<PurchaseMatchStatus | typeof NONE>>(new Set());
 
@@ -163,7 +171,11 @@ export default function MatchComprasScreen() {
         if (!hay.includes(q)) return false;
       }
       if (tierFiltro.size > 0) {
-        const tier = candidatesByItem.get(item.id)?.[0]?.tier ?? null;
+        // A confirmed item reads as "confirmado" here regardless of what
+        // tier its (frozen, pre-confirmation) candidate score says —
+        // filtering by e.g. Fuerte should only surface items still
+        // awaiting a decision, not ones already resolved.
+        const tier = activeMatchByItem.get(item.id)?.status === "confirmado" ? "confirmado" : (candidatesByItem.get(item.id)?.[0]?.tier ?? null);
         if (!tier || !tierFiltro.has(tier)) return false;
       }
       if (areaFiltro.size > 0 && !(item.area && areaFiltro.has(item.area))) return false;
@@ -178,7 +190,7 @@ export default function MatchComprasScreen() {
   }, [items, search, tierFiltro, areaFiltro, statusFiltro, candidatesByItem, activeMatchByItem]);
 
   const chips: FilterChip[] = [
-    ...[...tierFiltro].map((t) => ({ id: `tier:${t}`, label: TIER_LABELS[t] })),
+    ...[...tierFiltro].map((t) => ({ id: `tier:${t}`, label: t === "confirmado" ? STATUS_LABELS.confirmado : TIER_LABELS[t] })),
     ...[...areaFiltro].map((a) => ({ id: `area:${a}`, label: a })),
     ...[...statusFiltro].map((s) => ({ id: `status:${s}`, label: s === NONE ? "Pendiente" : STATUS_LABELS[s] })),
   ];
@@ -342,6 +354,9 @@ export default function MatchComprasScreen() {
                     {o.label}
                   </Pill>
                 ))}
+                <Pill active={tierFiltro.has("confirmado")} onClick={() => toggle(tierFiltro, "confirmado", setTierFiltro)}>
+                  {STATUS_LABELS.confirmado}
+                </Pill>
               </div>
             </div>
             <div>
