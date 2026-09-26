@@ -789,7 +789,7 @@ function ConfirmMatchSheet({
                 setUnits(n);
                 if (line.total_neto != null) setUnitCost(Number(line.total_neto) / n);
               }}
-              className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm"
+              className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
             />
           </label>
           <label className="block">
@@ -798,7 +798,7 @@ function ConfirmMatchSheet({
               type="number"
               value={unitCost ?? ""}
               onChange={(e) => setUnitCost(e.target.value === "" ? null : Number(e.target.value))}
-              className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm"
+              className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
             />
           </label>
         </div>
@@ -821,7 +821,7 @@ function ConfirmMatchSheet({
 
         <label className="mt-3 block">
           <span className="text-xs font-medium text-ink-soft">Nota (opcional)</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line-strong p-2 text-sm" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line-strong p-2 text-sm text-ink" />
         </label>
 
         <div className="mt-4 flex flex-col gap-2">
@@ -875,12 +875,12 @@ function SinRegistroSheet({
             type="number"
             value={value ?? ""}
             onChange={(e) => setValue(e.target.value === "" ? null : Number(e.target.value))}
-            className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm"
+            className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
           />
         </label>
         <label className="mt-3 block">
           <span className="text-xs font-medium text-ink-soft">Nota (opcional)</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line-strong p-2 text-sm" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1 w-full rounded-md border border-line-strong p-2 text-sm text-ink" />
         </label>
         <button
           type="button"
@@ -1150,7 +1150,7 @@ function BuscarSheet({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder='Descripción, proveedor... o "texto exacto"'
-            className="h-10 min-w-0 flex-1 rounded-md border border-line-strong px-3 text-sm"
+            className="h-10 min-w-0 flex-1 rounded-md border border-line-strong px-3 text-sm text-ink"
           />
           <button
             type="button"
@@ -1173,7 +1173,7 @@ function BuscarSheet({
                 value={proveedor}
                 onChange={(e) => setProveedor(e.target.value)}
                 placeholder="Nombre del proveedor"
-                className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
               />
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -1183,7 +1183,7 @@ function BuscarSheet({
                   type="number"
                   value={montoMin}
                   onChange={(e) => setMontoMin(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
                 />
               </label>
               <label className="block">
@@ -1192,7 +1192,7 @@ function BuscarSheet({
                   type="number"
                   value={montoMax}
                   onChange={(e) => setMontoMax(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
                 />
               </label>
               <label className="block">
@@ -1201,7 +1201,7 @@ function BuscarSheet({
                   type="date"
                   value={fechaDesde}
                   onChange={(e) => setFechaDesde(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
                 />
               </label>
               <label className="block">
@@ -1210,7 +1210,7 @@ function BuscarSheet({
                   type="date"
                   value={fechaHasta}
                   onChange={(e) => setFechaHasta(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm"
+                  className="mt-1 h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
                 />
               </label>
             </div>
