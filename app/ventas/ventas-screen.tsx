@@ -8,6 +8,7 @@ import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import StatusBadge from "@/components/StatusBadge";
+import Pill from "@/components/Pill";
 import { PAYMENT_METHOD_OPTIONS, PAYMENT_METHOD_LABELS } from "@/lib/sales/status";
 import type { ItemSale, ItemSalePayment, PaymentMethod } from "@/lib/sales/types";
 import type { Item, ItemStatus } from "@/lib/types";
@@ -45,6 +46,7 @@ export default function VentasScreen() {
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<"buscar" | "resumen">("buscar");
 
   // Exclusive to Owner — Editor gets everything else this app has, just
   // not this. Redirects the same way every other admin screen redirects
@@ -183,12 +185,22 @@ export default function VentasScreen() {
   return (
     <div className="pb-8">
       <div className="border-b border-line px-3.5 py-3">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar artículo..."
-          className="h-11 w-full rounded-full border border-line-strong bg-page px-4 text-base text-ink placeholder:text-ink-faint focus:outline-none"
-        />
+        <div className="flex gap-2">
+          <Pill active={view === "buscar"} onClick={() => setView("buscar")}>
+            Por artículo
+          </Pill>
+          <Pill active={view === "resumen"} onClick={() => setView("resumen")}>
+            Resumen
+          </Pill>
+        </div>
+        {view === "buscar" && (
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar artículo..."
+            className="mt-3 h-11 w-full rounded-full border border-line-strong bg-page px-4 text-base text-ink placeholder:text-ink-faint focus:outline-none"
+          />
+        )}
         <p className="mt-2 text-sm text-ink-soft">
           {soldCount} de {items.length} vendidos
         </p>
@@ -198,6 +210,16 @@ export default function VentasScreen() {
 
       {loading ? (
         <p className="p-4 text-sm text-ink-soft">Cargando...</p>
+      ) : view === "resumen" ? (
+        <ResumenView
+          items={items}
+          salesByItem={salesByItem}
+          paymentsBySale={paymentsBySale}
+          onSelectItem={(itemId) => {
+            setSelectedItemId(itemId);
+            setView("buscar");
+          }}
+        />
       ) : (
         <div className="md:grid md:grid-cols-[360px_1fr] md:items-start md:gap-4 md:px-3.5">
           <div
@@ -247,6 +269,109 @@ export default function VentasScreen() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------
+// Resumen — every sale so far, most recent first, with totals across
+// all of them and a breakdown by how the money actually came in. Pure
+// client-side aggregation over data VentasScreen already loaded, no
+// extra query.
+// --------------------------------------------------------------------
+function ResumenView({
+  items,
+  salesByItem,
+  paymentsBySale,
+  onSelectItem,
+}: {
+  items: QueueItem[];
+  salesByItem: Map<string, ItemSale>;
+  paymentsBySale: Map<string, ItemSalePayment[]>;
+  onSelectItem: (itemId: string) => void;
+}) {
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+
+  const rows = useMemo(
+    () =>
+      [...salesByItem.entries()]
+        .map(([itemId, sale]) => {
+          const item = itemsById.get(itemId);
+          const payments = paymentsBySale.get(sale.id) ?? [];
+          const paid = payments.reduce((s, p) => s + p.amount, 0);
+          return { item, sale, paid, saldo: Math.max(0, sale.total_with_iva - paid) };
+        })
+        .filter((r): r is typeof r & { item: QueueItem } => Boolean(r.item))
+        .sort((a, b) => b.sale.sold_at.localeCompare(a.sale.sold_at)),
+    [salesByItem, paymentsBySale, itemsById],
+  );
+
+  const totalVendido = rows.reduce((s, r) => s + r.sale.total_with_iva, 0);
+  const totalCobrado = rows.reduce((s, r) => s + r.paid, 0);
+  const saldoPendiente = rows.reduce((s, r) => s + r.saldo, 0);
+
+  const byMethod = new Map<string, number>();
+  for (const sale of salesByItem.values()) {
+    for (const p of paymentsBySale.get(sale.id) ?? []) {
+      byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + p.amount);
+    }
+  }
+
+  return (
+    <div className="px-3.5 py-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-md border border-line bg-card p-3">
+          <p className="text-xs text-ink-soft">Total vendido</p>
+          <p className="text-lg font-bold text-ink">{formatCurrency(totalVendido)}</p>
+        </div>
+        <div className="rounded-md border border-line bg-card p-3">
+          <p className="text-xs text-ink-soft">Total cobrado</p>
+          <p className="text-lg font-bold text-ink">{formatCurrency(totalCobrado)}</p>
+        </div>
+        <div className="rounded-md border border-line bg-card p-3">
+          <p className="text-xs text-ink-soft">Saldo pendiente</p>
+          <p className={`text-lg font-bold ${saldoPendiente > 0 ? "text-negative" : "text-ink"}`}>{formatCurrency(saldoPendiente)}</p>
+        </div>
+        <div className="rounded-md border border-line bg-card p-3">
+          <p className="text-xs text-ink-soft">Ventas</p>
+          <p className="text-lg font-bold text-ink">{rows.length}</p>
+        </div>
+      </div>
+
+      {byMethod.size > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PAYMENT_METHOD_OPTIONS.map((o) =>
+            byMethod.has(o.value) ? (
+              <span key={o.value} className="rounded-full border border-line-strong bg-card px-3 py-1 text-xs text-ink-soft">
+                {o.label}: <span className="font-semibold text-ink">{formatCurrency(byMethod.get(o.value)!)}</span>
+              </span>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 space-y-1.5">
+        {rows.map(({ item, sale, saldo }) => (
+          <button
+            key={sale.id}
+            type="button"
+            onClick={() => onSelectItem(item.id)}
+            className="flex w-full items-center justify-between gap-3 rounded-md border border-line bg-card px-3 py-2.5 text-left"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
+              <p className="truncate text-xs text-ink-soft">
+                {sale.buyer_name ?? "Sin comprador"} · {formatDate(sale.sold_at)}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-sm font-semibold text-ink">{formatCurrency(sale.total_with_iva)}</p>
+              <p className={`text-xs ${saldo > 0 ? "text-negative" : "text-positive"}`}>{saldo > 0 ? `Saldo ${formatCurrency(saldo)}` : "Pagado"}</p>
+            </div>
+          </button>
+        ))}
+        {rows.length === 0 && <p className="p-4 text-sm text-ink-soft">Sin ventas registradas todavía.</p>}
+      </div>
     </div>
   );
 }
