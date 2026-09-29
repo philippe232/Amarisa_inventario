@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt } from "lucide-react";
+import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt, DollarSign } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 
@@ -14,16 +14,18 @@ const VIEWER_NAV_ITEMS = [
   { href: "/items", label: "Inicio", icon: Home },
   { href: "/wishlist", label: "Mi lista", icon: Heart },
 ];
-// Editor/Owner's whole app surface is list/detail/edit, plus the
-// Revisión de Inventario screen (app/revision) — a real in-app route,
-// not the external Claude artifact this briefly linked to. Scoped the
-// same for Editor and Owner "for now" per explicit instruction, not a
-// permissions split.
+// Editor's surface: list/detail/edit, Revisión de Inventario, and
+// Precios de Compra. Owner gets all of that plus Ventas (0029) —
+// exclusive to Owner is the first real Editor/Owner permissions split
+// this app has ever had; 0004's admins table always anticipated one
+// ("role exists so that can diverge later... not because anything here
+// treats them differently yet") but nothing used it until now.
 const ADMIN_NAV_ITEMS = [
   { href: "/items", label: "Inicio", icon: Home },
   { href: "/revision", label: "Revisión de Inventario", icon: ClipboardList },
   { href: "/match-compras", label: "Precios de Compra", icon: Receipt },
 ];
+const OWNER_NAV_ITEMS = [...ADMIN_NAV_ITEMS, { href: "/ventas", label: "Ventas", icon: DollarSign }];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -31,7 +33,7 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
 
   if (!open) return null;
 
-  const navItems = role ? ADMIN_NAV_ITEMS : VIEWER_NAV_ITEMS;
+  const navItems = role === "owner" ? OWNER_NAV_ITEMS : role ? ADMIN_NAV_ITEMS : VIEWER_NAV_ITEMS;
 
   async function handleLogout() {
     await createClient().auth.signOut();
