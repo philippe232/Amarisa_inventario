@@ -1,13 +1,18 @@
-// Mirrors db/migrations/0029_item_sales.sql — kept by hand, same
-// convention as lib/types.ts for the items table.
+// Mirrors db/migrations/0029_item_sales.sql and 0030's factura/SPEI
+// rework — kept by hand, same convention as lib/types.ts for items.
 
-export type PaymentMethod = "efectivo" | "transferencia" | "otro";
+export type PaymentMethod = "efectivo" | "spei" | "otro";
 
 export type ItemSale = {
   id: string;
   item_id: string;
   final_price: number;
-  iva_included: boolean;
+  // Whether the buyer requested a factura — the real trigger for IVA,
+  // not an abstract "was it already included" toggle. iva_amount is
+  // only ever non-null when this is true (16% of final_price);
+  // total_with_iva is always "what's owed in total" either way.
+  requires_invoice: boolean;
+  iva_amount: number | null;
   total_with_iva: number;
   buyer_name: string | null;
   buyer_contact: string | null;

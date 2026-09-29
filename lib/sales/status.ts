@@ -2,7 +2,7 @@ import type { PaymentMethod } from "@/lib/sales/types";
 
 export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: "efectivo", label: "Efectivo" },
-  { value: "transferencia", label: "Transferencia" },
+  { value: "spei", label: "SPEI" },
   { value: "otro", label: "Otro" },
 ];
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = Object.fromEntries(

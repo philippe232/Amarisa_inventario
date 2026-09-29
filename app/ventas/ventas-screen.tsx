@@ -102,7 +102,9 @@ export default function VentasScreen() {
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((i) => [i.name, i.brand, i.model, i.area].filter(Boolean).some((f) => (f as string).toLowerCase().includes(q)));
+    return items.filter((i) =>
+      [i.name, i.brand, i.model, i.area, i.ref_code].filter(Boolean).some((f) => (f as string).toLowerCase().includes(q)),
+    );
   }, [items, search]);
 
   const soldCount = items.filter((i) => i.status === "sold").length;
@@ -117,7 +119,7 @@ export default function VentasScreen() {
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, status: newStatus } : i)));
   }
 
-  async function saveSale(itemId: string, patch: Pick<ItemSale, "final_price" | "iva_included" | "buyer_name" | "buyer_contact" | "notes">) {
+  async function saveSale(itemId: string, patch: Pick<ItemSale, "final_price" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) {
     const existing = salesByItem.get(itemId);
     const { data, error: err } = await supabase
       .from("item_sales")
@@ -390,13 +392,13 @@ function ItemSalePanel({
   sale: ItemSale | null;
   payments: ItemSalePayment[];
   onBack: () => void;
-  onSaveSale: (patch: Pick<ItemSale, "final_price" | "iva_included" | "buyer_name" | "buyer_contact" | "notes">) => Promise<void>;
+  onSaveSale: (patch: Pick<ItemSale, "final_price" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) => Promise<void>;
   onDeleteSale: () => Promise<void>;
   onAddPayment: (p: { amount: number; method: PaymentMethod; paid_at: string; note: string | null }) => Promise<void>;
   onDeletePayment: (paymentId: string) => Promise<void>;
 }) {
   const [finalPrice, setFinalPrice] = useState(sale ? String(sale.final_price) : "");
-  const [ivaIncluded, setIvaIncluded] = useState(sale?.iva_included ?? true);
+  const [requiresInvoice, setRequiresInvoice] = useState(sale?.requires_invoice ?? false);
   const [buyerName, setBuyerName] = useState(sale?.buyer_name ?? "");
   const [buyerContact, setBuyerContact] = useState(sale?.buyer_contact ?? "");
   const [notes, setNotes] = useState(sale?.notes ?? "");
@@ -409,10 +411,15 @@ function ItemSalePanel({
   const [addingPayment, setAddingPayment] = useState(false);
 
   const priceNumber = Number(finalPrice) || 0;
-  const previewTotal = ivaIncluded ? priceNumber : Math.round(priceNumber * 1.16 * 100) / 100;
+  const previewIva = requiresInvoice ? Math.round(priceNumber * 0.16 * 100) / 100 : null;
+  const previewTotal = requiresInvoice ? Math.round(priceNumber * 1.16 * 100) / 100 : priceNumber;
   const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
   const totalOwed = sale?.total_with_iva ?? previewTotal;
   const saldoPendiente = Math.max(0, totalOwed - totalPaid);
+
+  const askingPrice = item.asking_price;
+  const discountAmount = askingPrice != null ? askingPrice - priceNumber : null;
+  const discountPct = askingPrice != null && askingPrice > 0 ? (discountAmount! / askingPrice) * 100 : null;
 
   return (
     <div className="space-y-4 pb-6">
@@ -430,13 +437,18 @@ function ItemSalePanel({
           <p className="text-sm text-ink-soft">
             {item.area ?? "—"} · Cant. {item.quantity} {item.ref_code && <>· {item.ref_code}</>}
           </p>
-          {item.asking_price != null && <p className="text-sm text-ink-soft">Precio de venta: {formatCurrency(item.asking_price)}</p>}
         </div>
         <StatusBadge status={item.status} />
       </div>
 
       <div className="space-y-3 rounded-md border border-line bg-card p-3">
         <p className="text-sm font-semibold text-ink">Datos de la venta</p>
+        <label className="block">
+          <span className="text-xs font-medium text-ink-soft">Precio de venta (lista)</span>
+          <p className="mt-1 flex h-10 w-full items-center rounded-md border border-line bg-page px-2 text-sm text-ink-soft">
+            {askingPrice != null ? formatCurrency(askingPrice) : "Sin precio de lista"}
+          </p>
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs font-medium text-ink-soft">Precio final</span>
@@ -447,12 +459,30 @@ function ItemSalePanel({
               className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
             />
           </label>
-          <label className="flex items-end gap-2 pb-2.5">
-            <input type="checkbox" checked={ivaIncluded} onChange={(e) => setIvaIncluded(e.target.checked)} className="h-4 w-4" />
-            <span className="text-sm text-ink">IVA incluido</span>
-          </label>
+          <div className="flex flex-col justify-end pb-2.5">
+            <span className="text-xs font-medium text-ink-soft">Descuento</span>
+            <p className={`text-sm font-medium ${discountAmount != null && discountAmount > 0 ? "text-positive" : "text-ink"}`}>
+              {discountAmount != null ? `${formatCurrency(discountAmount)} (${discountPct!.toFixed(1)}%)` : "—"}
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-ink-soft">Total {ivaIncluded ? "(IVA incluido)" : "con IVA (+16%)"}: {formatCurrency(previewTotal)}</p>
+
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={requiresInvoice} onChange={(e) => setRequiresInvoice(e.target.checked)} className="h-4 w-4" />
+          <span className="text-sm text-ink">Requiere factura</span>
+        </label>
+        {requiresInvoice && (
+          <div className="grid grid-cols-2 gap-3 rounded-md border border-line bg-page p-2.5">
+            <div>
+              <p className="text-xs font-medium text-ink-soft">IVA (16%)</p>
+              <p className="text-sm font-semibold text-ink">{previewIva != null ? formatCurrency(previewIva) : "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-soft">Monto + IVA a transferir</p>
+              <p className="text-sm font-semibold text-ink">{formatCurrency(previewTotal)}</p>
+            </div>
+          </div>
+        )}
 
         <label className="block">
           <span className="text-xs font-medium text-ink-soft">Nombre del comprador</span>
@@ -489,7 +519,7 @@ function ItemSalePanel({
               setSaving(true);
               await onSaveSale({
                 final_price: priceNumber,
-                iva_included: ivaIncluded,
+                requires_invoice: requiresInvoice,
                 buyer_name: buyerName.trim() || null,
                 buyer_contact: buyerContact.trim() || null,
                 notes: notes.trim() || null,
