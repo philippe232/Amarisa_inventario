@@ -33,6 +33,14 @@ export default function ItemsList() {
   // purpose, so a new value never needs a matching code change here.
   const [areaFiltro, setAreaFiltro] = useState<Set<string>>(new Set());
   const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
+  // Single-select, not a Set like área/tipo — asc and desc are mutually
+  // exclusive, and clicking the active one again clears it back to the
+  // default (newest-first) order.
+  const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
+
+  function togglePriceSort(value: "asc" | "desc") {
+    setPriceSort((prev) => (prev === value ? null : value));
+  }
 
   function toggleArea(area: string) {
     setAreaFiltro((prev) => {
@@ -143,12 +151,23 @@ export default function ItemsList() {
     }
     if (areaFiltro.size > 0) result = result.filter((i) => i.area && areaFiltro.has(i.area));
     if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
+    if (priceSort) {
+      // Items with no price at all aren't "cheapest" or "priciest" —
+      // push them to the end regardless of direction rather than let a
+      // missing price masquerade as $0.
+      result = [...result].sort((a, b) => {
+        if (a.asking_price == null) return b.asking_price == null ? 0 : 1;
+        if (b.asking_price == null) return -1;
+        return priceSort === "asc" ? a.asking_price - b.asking_price : b.asking_price - a.asking_price;
+      });
+    }
     return result;
-  }, [items, search, areaFiltro, typeFiltro]);
+  }, [items, search, areaFiltro, typeFiltro, priceSort]);
 
   const chips: FilterChip[] = [
     ...Array.from(areaFiltro).map((a) => ({ id: `area:${a}`, label: a })),
     ...Array.from(typeFiltro).map((t) => ({ id: `type:${t}`, label: t })),
+    ...(priceSort ? [{ id: `price:${priceSort}`, label: priceSort === "asc" ? "Precio: menor a mayor" : "Precio: mayor a menor" }] : []),
   ];
 
   function handleRemoveChip(id: string) {
@@ -157,9 +176,10 @@ export default function ItemsList() {
     const value = id.slice(sep + 1);
     if (kind === "area") toggleArea(value);
     else if (kind === "type") toggleType(value);
+    else if (kind === "price") setPriceSort(null);
   }
 
-  const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0;
+  const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0 || priceSort !== null;
 
   // Insert a minimal placeholder row, then hand off to the real edit
   // screen for everything else — reuses that form entirely instead of
@@ -199,12 +219,25 @@ export default function ItemsList() {
                 setSearch("");
                 setAreaFiltro(new Set());
                 setTypeFiltro(new Set());
+                setPriceSort(null);
               }
             : undefined
         }
         sheetTitle="Filtrar"
         sheetContent={
           <div className="space-y-5">
+            <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Ordenar por precio</span>
+              <div className="flex flex-wrap gap-2">
+                <Pill active={priceSort === "asc"} onClick={() => togglePriceSort("asc")}>
+                  Menor a mayor
+                </Pill>
+                <Pill active={priceSort === "desc"} onClick={() => togglePriceSort("desc")}>
+                  Mayor a menor
+                </Pill>
+              </div>
+            </div>
+
             {areaOptions.length > 0 && (
               <div>
                 <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Área</span>
