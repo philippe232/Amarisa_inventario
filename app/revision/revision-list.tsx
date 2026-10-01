@@ -888,6 +888,10 @@ export default function RevisionList() {
     };
   }, [supabase, role]);
 
+  const totalPrecioVenta = useMemo(
+    () => items.reduce((sum, i) => sum + (i.asking_price ?? 0) * i.quantity, 0),
+    [items],
+  );
   const totalRevisar = useMemo(() => items.filter((i) => extractRevisar(i.condition_notes).revisar).length, [items]);
   const totalNoPhoto = useMemo(() => items.filter((i) => i.photoCount === 0).length, [items]);
   const totalFetched = useMemo(() => items.filter((i) => i.data_status === "fetched").length, [items]);
@@ -1156,6 +1160,10 @@ export default function RevisionList() {
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-ink [font-variant-numeric:tabular-nums]">{items.length}</p>
                 <p className="text-xs text-ink-soft">Total artículos</p>
+              </div>
+              <div className="rounded-md border border-line bg-card p-3">
+                <p className="text-xl font-bold text-ink [font-variant-numeric:tabular-nums]">{formatCurrency(totalPrecioVenta)}</p>
+                <p className="text-xs text-ink-soft">Precio de venta total</p>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalRevisar}</p>
