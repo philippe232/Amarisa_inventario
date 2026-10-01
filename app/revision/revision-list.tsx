@@ -892,7 +892,7 @@ export default function RevisionList() {
     () => items.reduce((sum, i) => sum + (i.asking_price ?? 0) * i.quantity, 0),
     [items],
   );
-  const totalRevisar = useMemo(() => items.filter((i) => extractRevisar(i.condition_notes).revisar).length, [items]);
+  const totalSinPrecio = useMemo(() => items.filter((i) => i.asking_price == null).length, [items]);
   const totalNoPhoto = useMemo(() => items.filter((i) => i.photoCount === 0).length, [items]);
   const totalFetched = useMemo(() => items.filter((i) => i.data_status === "fetched").length, [items]);
   const totalNuevo = useMemo(() => items.filter((i) => (i.review_status ?? "nuevo") === "nuevo").length, [items]);
@@ -1166,8 +1166,8 @@ export default function RevisionList() {
                 <p className="text-xs text-ink-soft">Precio de venta total</p>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
-                <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalRevisar}</p>
-                <p className="text-xs text-ink-soft">Para revisar</p>
+                <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalSinPrecio}</p>
+                <p className="text-xs text-ink-soft">Sin precio venta</p>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalNoPhoto}</p>
@@ -1179,18 +1179,15 @@ export default function RevisionList() {
               </div>
               {/* Same three-way split as review_status: neutral
                   (untouched) -> yellow (in progress) -> positive
-                  (cleared). */}
+                  (cleared) — one chip, not three, so it reads as a
+                  single funnel left to right. */}
               <div className="rounded-md border border-line bg-card p-3">
-                <p className="text-xl font-bold text-neutral [font-variant-numeric:tabular-nums]">{totalNuevo}</p>
-                <p className="text-xs text-ink-soft">Nuevo</p>
-              </div>
-              <div className="rounded-md border border-line bg-card p-3">
-                <p className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalEnRevision}</p>
-                <p className="text-xs text-ink-soft">En revisión</p>
-              </div>
-              <div className="rounded-md border border-line bg-card p-3">
-                <p className="text-xl font-bold text-positive [font-variant-numeric:tabular-nums]">{totalAprobado}</p>
-                <p className="text-xs text-ink-soft">Aprobado</p>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-xl font-bold text-neutral [font-variant-numeric:tabular-nums]">{totalNuevo}</span>
+                  <span className="text-xl font-bold text-yellow [font-variant-numeric:tabular-nums]">{totalEnRevision}</span>
+                  <span className="text-xl font-bold text-positive [font-variant-numeric:tabular-nums]">{totalAprobado}</span>
+                </div>
+                <p className="text-xs text-ink-soft">Nuevo · En revisión · Aprobado</p>
               </div>
             </div>
 
