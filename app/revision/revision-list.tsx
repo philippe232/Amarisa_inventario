@@ -759,7 +759,7 @@ function compareValues(a: SortValue, b: SortValue, dir: SortDir): number {
 // sticky cell has to actually occlude whatever scrolls underneath it,
 // not just tint it, and a fixed width so Ref.'s `left` offset (exactly
 // Artículo's width) never drifts out of alignment with it.
-const ARTICULO_COL_WIDTH = 180;
+const ARTICULO_COL_WIDTH = 234; // 180 + 30%
 const REF_COL_WIDTH = 110;
 
 function SortableTh({
