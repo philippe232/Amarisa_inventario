@@ -893,6 +893,23 @@ export default function RevisionList() {
     [items],
   );
   const totalSinPrecio = useMemo(() => items.filter((i) => i.asking_price == null).length, [items]);
+  // Sin precio venta, broken down — urgent-to-calm, same order as
+  // PRIORITY_OPTIONS, with the unassigned bucket last since it isn't
+  // really a priority tier.
+  const sinPrecioByPriority = useMemo(() => {
+    const tiers = PRIORITY_OPTIONS.map(({ value, label }) => {
+      const inTier = items.filter((i) => i.priority === value);
+      return { key: value as string, label, sinPrecio: inTier.filter((i) => i.asking_price == null).length, total: inTier.length };
+    });
+    const sinPrioridad = items.filter((i) => i.priority == null);
+    tiers.push({
+      key: NONE,
+      label: "Sin prioridad",
+      sinPrecio: sinPrioridad.filter((i) => i.asking_price == null).length,
+      total: sinPrioridad.length,
+    });
+    return tiers;
+  }, [items]);
   const totalNoPhoto = useMemo(() => items.filter((i) => i.photoCount === 0).length, [items]);
   const totalFetched = useMemo(() => items.filter((i) => i.data_status === "fetched").length, [items]);
   const totalNuevo = useMemo(() => items.filter((i) => (i.review_status ?? "nuevo") === "nuevo").length, [items]);
@@ -1168,6 +1185,16 @@ export default function RevisionList() {
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalSinPrecio}</p>
                 <p className="text-xs text-ink-soft">Sin precio venta</p>
+                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5">
+                  {sinPrecioByPriority.map((row) => (
+                    <div key={row.key} className="flex items-center justify-between gap-2 text-[11px] text-ink-soft">
+                      <span>{row.label}</span>
+                      <span className="tabular-nums">
+                        {row.sinPrecio} / {row.total}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
                 <p className="text-xl font-bold text-negative [font-variant-numeric:tabular-nums]">{totalNoPhoto}</p>
