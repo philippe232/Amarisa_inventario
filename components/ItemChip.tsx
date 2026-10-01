@@ -1,4 +1,4 @@
-import { ImageOff, Users } from "lucide-react";
+import { Hash, ImageOff, Users } from "lucide-react";
 import Row from "@/components/Row";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
@@ -44,9 +44,23 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-bold text-ink">{displayName}</p>
-        <div className="mt-0.5 flex items-center gap-1 text-[13px] text-ink-soft">
-          <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{bidderLabel(item.bidderCount)}</span>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-soft">
+          <span className="flex items-center gap-1" aria-label={bidderLabel(item.bidderCount)}>
+            <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span
+              aria-hidden="true"
+              className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-soft/15 px-1 text-[11px] font-bold tabular-nums"
+            >
+              {item.bidderCount}
+            </span>
+          </span>
+          {item.ref_code && (
+            <span className="flex min-w-0 items-center gap-1 truncate">
+              <span aria-hidden="true">·</span>
+              <Hash className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{item.ref_code}</span>
+            </span>
+          )}
         </div>
       </div>
 

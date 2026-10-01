@@ -7,7 +7,6 @@ import { ChevronDown, Flag, ImageOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
-import { getDisplayName } from "@/lib/items";
 import { normalizeSearch } from "@/lib/normalize-search";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
@@ -734,10 +733,10 @@ const COLUMNS: ColumnDef[] = [
 // immutable by a DB trigger (it's a physical sticker already written),
 // and updated_at is overwritten to now() by a trigger on every save
 // regardless of what's sent, so offering an input for it would just be
-// a lie. Artículo is bound to the raw `name` (not getDisplayName's
-// brand+model fallback) since that's the field actually being edited —
-// Marca/Modelo are their own columns right there in Descripción.
-const PINNED_START = { key: "name", label: "Artículo", sortValue: (i: Row) => getDisplayName(i) };
+// a lie. Artículo is bound to the raw `name` since that's the field
+// actually being edited — Marca/Modelo are their own columns right
+// there in Descripción.
+const PINNED_START = { key: "name", label: "Artículo", sortValue: (i: Row) => i.name };
 const PINNED_REF = { key: "ref_code", label: "Ref.", sortValue: (i: Row) => i.ref_code };
 const PINNED_END = { key: "updated_at", label: "Actualizado", sortValue: (i: Row) => i.updated_at };
 

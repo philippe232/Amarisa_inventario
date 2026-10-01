@@ -1,11 +1,11 @@
 import type { Item } from "@/lib/types";
 
-// Shared by the list chip and the detail screen — brand + model reads
-// better than the raw inventory name when both are known (most items
-// don't have them yet, since the September count only captured name/
-// description, not a separate brand/model split).
-export function getDisplayName(item: Pick<Item, "brand" | "model" | "name">): string {
-  if (item.brand && item.model) return `${item.brand} ${item.model}`;
+// Shared by the list chip and the detail screen. Brand/model are entered
+// for matching purposes (see match-compras) and are often a placeholder
+// like "SN"/"SIN MARCA" rather than real data, so they're never a safe
+// stand-in for the actual item name — always show the raw `name` field,
+// same as the revisión screen's Artículo column already does.
+export function getDisplayName(item: Pick<Item, "name">): string {
   return item.name;
 }
 
