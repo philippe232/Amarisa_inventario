@@ -9,10 +9,10 @@ import type { ItemListRow } from "@/lib/types";
 // wrapped in the same Row "line" container. Same 5-slot structure, new
 // data mapping for Amarisa's resale catalog instead of Cereza's ledger.
 
-function ItemPhoto({ url, alt }: { url: string | null; alt: string }) {
+function ItemPhoto({ url, alt, sold }: { url: string | null; alt: string; sold: boolean }) {
   if (url) {
     return (
-      <span className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line bg-card">
+      <span className={`h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line bg-card ${sold ? "opacity-50" : ""}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={url} alt={alt} className="h-full w-full object-cover" />
       </span>
@@ -23,7 +23,7 @@ function ItemPhoto({ url, alt }: { url: string | null; alt: string }) {
   // (a photo thumbnail reads better as a rounded square than a circle
   // crop once real photos land here).
   return (
-    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line bg-card text-ink-faint">
+    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line bg-card text-ink-faint ${sold ? "opacity-50" : ""}`}>
       <ImageOff className="h-4 w-4" aria-hidden="true" />
     </span>
   );
@@ -37,13 +37,17 @@ function bidderLabel(count: number): string {
 
 export default function ItemChip({ item, href }: { item: ItemListRow; href?: string }) {
   const displayName = getDisplayName(item);
+  // Every unit sold (set when the order that sells the last one is
+  // closed in /ventas): the row is crossed out and says "Vendido" where
+  // the price was.
+  const sold = item.status === "sold";
 
   return (
     <Row variant="line" href={href}>
-      <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} />
+      <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} sold={sold} />
 
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-bold text-ink">{displayName}</p>
+      <div className={`min-w-0 flex-1 ${sold ? "opacity-60" : ""}`}>
+        <p className={`truncate text-[15px] font-bold ${sold ? "text-ink-soft line-through" : "text-ink"}`}>{displayName}</p>
         <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-soft">
           <span className="flex items-center gap-1" aria-label={bidderLabel(item.bidderCount)}>
             <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -65,10 +69,14 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
       </div>
 
       <div className="shrink-0 text-right">
-        <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
-          {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
-        </p>
-        {(item.purchase_price != null || item.discount_pct != null) && (
+        {sold ? (
+          <p className="text-[16px] font-bold text-ink-soft">Vendido</p>
+        ) : (
+          <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
+            {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
+          </p>
+        )}
+        {!sold && (item.purchase_price != null || item.discount_pct != null) && (
           <div className="mt-0.5 flex items-center justify-end gap-1">
             {item.purchase_price != null && (
               <p className="text-[12px] text-ink-faint line-through [font-variant-numeric:tabular-nums]">
