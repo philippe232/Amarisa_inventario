@@ -46,9 +46,9 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
     <Row variant="line" href={href}>
       <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} sold={sold} />
 
-      <div className={`min-w-0 flex-1 ${sold ? "opacity-60" : ""}`}>
-        <p className={`truncate text-[15px] font-bold ${sold ? "text-ink-soft line-through" : "text-ink"}`}>{displayName}</p>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-soft">
+      <div className="min-w-0 flex-1">
+        <p className={`truncate text-[15px] font-bold ${sold ? "text-red-800 line-through" : "text-ink"}`}>{displayName}</p>
+        <div className={`mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-soft ${sold ? "opacity-60" : ""}`}>
           <span className="flex items-center gap-1" aria-label={bidderLabel(item.bidderCount)}>
             <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span
@@ -70,7 +70,7 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
 
       <div className="shrink-0 text-right">
         {sold ? (
-          <p className="text-[16px] font-bold text-ink-soft">Vendido</p>
+          <p className="text-[16px] font-bold text-red-800">Vendido</p>
         ) : (
           <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
             {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
