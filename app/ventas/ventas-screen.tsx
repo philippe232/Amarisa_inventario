@@ -328,16 +328,18 @@ export function VentasView({
   }
 
   // A buyer's list becomes a real cart: their email as name and contact,
-  // one unit of each article that still has any, at their offer or the
-  // list price. From there it's an ordinary cart.
-  async function convertList(list: { key: string; email: string | null; items: { itemId: string; bid: number | null }[] }) {
+  // the units they asked for of each article (as many as are still
+  // free), at their offer per piece or the list price. From there it's
+  // an ordinary cart.
+  async function convertList(list: { key: string; email: string | null; items: { itemId: string; quantity: number; bid: number | null }[] }) {
     const order = await createOrder(listLabel(list), list.email);
     if (!order) return;
     const rows = list.items.flatMap((entry) => {
       const item = itemsById.get(entry.itemId);
-      if (!item || item.quantity - (reservedByItem.get(item.id) ?? 0) < 1) return [];
+      const units = item ? Math.min(entry.quantity, item.quantity - (reservedByItem.get(item.id) ?? 0)) : 0;
+      if (!item || units < 1) return [];
       const price = entry.bid ?? item.asking_price ?? 0;
-      return [{ item_id: item.id, order_id: order.id, final_price: price, quantity: 1, line_total: round2(price), sold_by: email }];
+      return [{ item_id: item.id, order_id: order.id, final_price: price, quantity: units, line_total: round2(price * units), sold_by: email }];
     });
     if (rows.length > 0) {
       const { data, error: err } = await supabase.from("item_sales").insert(rows).select();

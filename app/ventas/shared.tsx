@@ -33,6 +33,7 @@ export type WishRow = {
   email: string | null;
   is_anonymous: boolean;
   item_id: string;
+  quantity: number;
   bid_amount: number | string | null;
   created_at: string;
 };
@@ -41,7 +42,8 @@ export type BuyerList = {
   key: string;
   email: string | null;
   anonymous: boolean;
-  items: { itemId: string; bid: number | null; addedAt: string }[];
+  // bid is the offer per piece; quantity is how many the buyer asked for.
+  items: { itemId: string; quantity: number; bid: number | null; addedAt: string }[];
   lastAt: string;
 };
 
@@ -59,7 +61,7 @@ export function buildBuyerLists(rows: WishRow[]): BuyerList[] {
       list = { key: r.user_id, email: r.email, anonymous: r.is_anonymous || !r.email, items: [], lastAt: r.created_at };
       byUser.set(r.user_id, list);
     }
-    list.items.push({ itemId: r.item_id, bid: r.bid_amount == null ? null : Number(r.bid_amount), addedAt: r.created_at });
+    list.items.push({ itemId: r.item_id, quantity: r.quantity ?? 1, bid: r.bid_amount == null ? null : Number(r.bid_amount), addedAt: r.created_at });
     if (r.created_at > list.lastAt) list.lastAt = r.created_at;
   }
   return [...byUser.values()].sort((a, b) => Number(a.anonymous) - Number(b.anonymous) || b.lastAt.localeCompare(a.lastAt));

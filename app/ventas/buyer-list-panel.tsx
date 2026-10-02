@@ -33,11 +33,15 @@ export default function BuyerListPanel({
   const rows = list.items.map((entry) => {
     const item = itemsById.get(entry.itemId);
     const available = item ? item.quantity - (reservedByItem.get(entry.itemId) ?? 0) : 0;
+    // Price per piece (their offer, else the list price) x the units they
+    // asked for, as many as are still free.
     const price = entry.bid ?? item?.asking_price ?? 0;
-    return { entry, item, available, price };
+    const units = Math.max(0, Math.min(entry.quantity, available));
+    return { entry, item, available, price, units };
   });
-  const addable = rows.filter((r) => r.item && r.available >= 1);
-  const total = addable.reduce((s, r) => s + r.price, 0);
+  const addable = rows.filter((r) => r.item && r.units >= 1);
+  const pieces = addable.reduce((s, r) => s + r.units, 0);
+  const total = addable.reduce((s, r) => s + r.price * r.units, 0);
 
   return (
     <div className="space-y-4 pb-6">
@@ -56,25 +60,33 @@ export default function BuyerListPanel({
 
       <div className="space-y-2 rounded-md border border-line bg-card p-3">
         <p className="text-sm font-semibold text-ink">Artículos de su lista</p>
-        {rows.map(({ entry, item, available, price }) => (
+        {rows.map(({ entry, item, available, price, units }) => (
           <div key={entry.itemId} className="flex items-start justify-between gap-3 rounded-md border border-line p-2.5">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink">{item ? getDisplayName(item) : "Artículo"}</p>
               <p className="text-xs text-ink-soft">
                 {item?.ref_code && <>{item.ref_code} · </>}
                 Precio de lista: {item?.asking_price != null ? formatCurrency(item.asking_price) : "—"}
-                {entry.bid != null && <> · Oferta: <span className="font-medium text-ink">{formatCurrency(entry.bid)}</span></>}
+                {entry.bid != null && <> · Oferta por pieza: <span className="font-medium text-ink">{formatCurrency(entry.bid)}</span></>}
               </p>
-              <p className={`text-xs ${available >= 1 ? "text-ink-soft" : "font-medium text-red-800"}`}>
-                {available >= 1 ? `Disponibles: ${available}` : "Sin unidades disponibles"}
+              <p className={`text-xs ${available >= entry.quantity ? "text-ink-soft" : "font-medium text-red-800"}`}>
+                Pidió {entry.quantity} ·{" "}
+                {available < 1
+                  ? "sin unidades disponibles"
+                  : available < entry.quantity
+                    ? `solo hay ${available}, se agregarán ${units}`
+                    : `disponibles: ${available}`}
               </p>
             </div>
-            <p className="shrink-0 text-sm font-semibold text-ink">{formatCurrency(price)}</p>
+            <div className="shrink-0 text-right">
+              <p className="text-sm font-semibold text-ink">{formatCurrency(price * units)}</p>
+              {units > 1 && <p className="text-xs text-ink-soft">{units} × {formatCurrency(price)}</p>}
+            </div>
           </div>
         ))}
         <div className="flex items-baseline justify-between border-t border-line pt-3">
           <p className="text-sm text-ink-soft">
-            Total · 1 unidad de {addable.length} {addable.length === 1 ? "artículo disponible" : "artículos disponibles"}
+            Total · {pieces} {pieces === 1 ? "pieza" : "piezas"} de {addable.length} {addable.length === 1 ? "artículo" : "artículos"}
           </p>
           <p className="text-lg font-bold text-ink">{formatCurrency(total)}</p>
         </div>
@@ -106,7 +118,7 @@ export default function BuyerListPanel({
             Convertir en carrito
           </button>
           <p className="text-xs text-ink-soft">
-            Crea un carrito con 1 unidad de cada artículo disponible, a su oferta o al precio de lista; después ajustas unidades y precios y lo cierras.
+            Crea un carrito con las unidades que pidió de cada artículo (hasta lo disponible), a su oferta por pieza o al precio de lista; después ajustas unidades y precios y lo cierras.
           </p>
         </div>
       )}

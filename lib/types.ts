@@ -85,6 +85,9 @@ export type Item = {
   internal_notes: string | null;
   created_at: string;
   updated_at: string;
+  // Only on rows read through items_public (0036): units sold so far,
+  // so a screen can show "Vendido 1 de 15" / what's still available.
+  units_sold?: number;
 };
 
 export type ItemPhoto = {
@@ -113,9 +116,6 @@ export type ItemListRow = Item & {
   // the public-facing count has to come from a view that aggregates
   // across everyone instead of an embedded per-row count.
   bidderCount: number;
-  // Units sold so far, from items_public (0036) — lets a list show
-  // "Vendido 1 de 15" on an item that still has units left.
-  units_sold?: number;
 };
 
 export type WishlistItem = {

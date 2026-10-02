@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/currency";
 import { formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import { useTopBar } from "@/components/TopBarContext";
+import QuantityStepper from "@/components/QuantityStepper";
 import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
 import PriorityBadge from "@/components/PriorityBadge";
@@ -46,6 +47,8 @@ export default function ItemDetail({ id }: { id: string }) {
   const [openingFactura, setOpeningFactura] = useState(false);
 
   const [wishlistRowId, setWishlistRowId] = useState<string | null>(null);
+  // How many units the buyer wants of this article (saved on the list row).
+  const [wishlistQty, setWishlistQty] = useState(1);
   const [wishlistBusy, setWishlistBusy] = useState(false);
   const [wishlistError, setWishlistError] = useState<string | null>(null);
 
@@ -84,11 +87,14 @@ export default function ItemDetail({ id }: { id: string }) {
         if (cancelled) return;
         const { data } = await supabase
           .from("wishlist_items")
-          .select("id")
+          .select("id, quantity")
           .eq("user_id", userId)
           .eq("item_id", id)
           .maybeSingle();
-        if (!cancelled) setWishlistRowId(data?.id ?? null);
+        if (!cancelled) {
+          setWishlistRowId(data?.id ?? null);
+          if (data?.quantity) setWishlistQty(data.quantity);
+        }
       } catch {
         // Leave the button in its default "add" state — same graceful
         // degradation as the rest of the app when anonymous auth isn't
@@ -113,6 +119,20 @@ export default function ItemDetail({ id }: { id: string }) {
     if (data) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  // Changing the quantity of an article already on the list saves it
+  // straight away; before it's added it just sets what will be added.
+  async function handleWishlistQty(next: number) {
+    const previous = wishlistQty;
+    setWishlistQty(next);
+    if (!wishlistRowId) return;
+    setWishlistError(null);
+    const { error } = await supabase.from("wishlist_items").update({ quantity: next }).eq("id", wishlistRowId);
+    if (error) {
+      setWishlistQty(previous);
+      setWishlistError(error.message);
+    }
+  }
+
   async function handleToggleWishlist() {
     setWishlistBusy(true);
     setWishlistError(null);
@@ -125,7 +145,7 @@ export default function ItemDetail({ id }: { id: string }) {
       } else {
         let { data, error } = await supabase
           .from("wishlist_items")
-          .upsert({ user_id: userId, item_id: id }, { onConflict: "user_id,item_id" })
+          .upsert({ user_id: userId, item_id: id, quantity: wishlistQty }, { onConflict: "user_id,item_id" })
           .select("id")
           .single();
         if (error) {
@@ -137,7 +157,7 @@ export default function ItemDetail({ id }: { id: string }) {
           const freshUserId = await ensureAnonymousSession(true);
           ({ data, error } = await supabase
             .from("wishlist_items")
-            .upsert({ user_id: freshUserId, item_id: id }, { onConflict: "user_id,item_id" })
+            .upsert({ user_id: freshUserId, item_id: id, quantity: wishlistQty }, { onConflict: "user_id,item_id" })
             .select("id")
             .single());
           if (error || !data) throw error ?? new Error("No se pudo actualizar tu lista.");
@@ -156,6 +176,8 @@ export default function ItemDetail({ id }: { id: string }) {
   if (!item) return null;
 
   const displayName = getDisplayName(item);
+  // Units a buyer can still ask for: what hasn't been sold yet.
+  const availableUnits = Math.max(0, item.quantity - (item.units_sold ?? 0));
 
   return (
     <div className="pb-8">
@@ -294,6 +316,14 @@ export default function ItemDetail({ id }: { id: string }) {
           Viewer/Bidder; role !== null (Editor/Owner) still sees it too,
           nothing about being an admin excludes them from wishlisting. */}
       <div className="mt-6 px-3.5">
+        {availableUnits > 1 && (
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-ink">
+              Cantidad <span className="text-ink-soft">(hasta {availableUnits})</span>
+            </p>
+            <QuantityStepper value={Math.min(wishlistQty, availableUnits)} max={availableUnits} onChange={handleWishlistQty} />
+          </div>
+        )}
         <button
           type="button"
           onClick={handleToggleWishlist}

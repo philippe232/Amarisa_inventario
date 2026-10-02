@@ -7,16 +7,21 @@ import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import ItemChip from "@/components/ItemChip";
+import QuantityStepper from "@/components/QuantityStepper";
 import type { Item, ItemListRow } from "@/lib/types";
 
 type WishlistRowFromQuery = {
   id: string;
+  quantity: number;
   bid_amount: number | string | null;
   items: (Item & { item_photos: { url: string }[] }) | null;
 };
 
 type WishlistRowData = {
   wishlistId: string;
+  quantity: number;
+  // Units already sold, so the buyer can't ask for more than remain.
+  unitsSold: number;
   bidAmount: number | null;
   item: ItemListRow;
 };
@@ -58,7 +63,7 @@ export default function WishlistList() {
       const [wishlistRes, countsRes] = await Promise.all([
         supabase
           .from("wishlist_items")
-          .select("id, bid_amount, items(*, item_photos(url))")
+          .select("id, quantity, bid_amount, items(*, item_photos(url))")
           .eq("user_id", userId)
           .order("created_at", { ascending: false }),
         supabase.from("item_wishlist_counts").select("item_id, bidder_count"),
@@ -77,6 +82,14 @@ export default function WishlistList() {
       );
 
       const wishlistRows = (wishlistRes.data ?? []) as unknown as WishlistRowFromQuery[];
+      // units_sold only exists on the public view, not the base table
+      // the embed above reads.
+      const soldRes = await supabase
+        .from("items_public")
+        .select("id, units_sold")
+        .in("id", wishlistRows.flatMap((r) => (r.items ? [r.items.id] : [])));
+      if (cancelled) return;
+      const soldById = new Map<string, number>((soldRes.data ?? []).map((r) => [r.id as string, Number(r.units_sold) || 0]));
       setRows(
         wishlistRows
           .filter((row): row is WishlistRowFromQuery & { items: NonNullable<WishlistRowFromQuery["items"]> } => row.items != null)
@@ -84,6 +97,8 @@ export default function WishlistList() {
             const { item_photos, ...item } = row.items;
             return {
               wishlistId: row.id,
+              quantity: row.quantity ?? 1,
+              unitsSold: soldById.get(row.items.id) ?? 0,
               bidAmount: row.bid_amount != null ? Number(row.bid_amount) : null,
               item: {
                 ...item,
@@ -107,6 +122,10 @@ export default function WishlistList() {
     setRows((prev) => prev.filter((r) => r.wishlistId !== wishlistId));
   }
 
+  function handleQuantitySaved(wishlistId: string, quantity: number) {
+    setRows((prev) => prev.map((r) => (r.wishlistId === wishlistId ? { ...r, quantity } : r)));
+  }
+
   function handleBidSaved(wishlistId: string, bidAmount: number) {
     setRows((prev) => prev.map((r) => (r.wishlistId === wishlistId ? { ...r, bidAmount } : r)));
   }
@@ -119,7 +138,13 @@ export default function WishlistList() {
   return (
     <div className="px-3.5 py-3">
       {rows.map((row) => (
-        <WishlistRow key={row.wishlistId} row={row} onRemoved={handleRemoved} onBidSaved={handleBidSaved} />
+        <WishlistRow
+          key={row.wishlistId}
+          row={row}
+          onRemoved={handleRemoved}
+          onBidSaved={handleBidSaved}
+          onQuantitySaved={handleQuantitySaved}
+        />
       ))}
     </div>
   );
@@ -129,10 +154,12 @@ function WishlistRow({
   row,
   onRemoved,
   onBidSaved,
+  onQuantitySaved,
 }: {
   row: WishlistRowData;
   onRemoved: (wishlistId: string) => void;
   onBidSaved: (wishlistId: string, bidAmount: number) => void;
+  onQuantitySaved: (wishlistId: string, quantity: number) => void;
 }) {
   const supabase = createClient();
   const [bidding, setBidding] = useState(false);
@@ -154,6 +181,20 @@ function WishlistRow({
       return;
     }
     onRemoved(row.wishlistId);
+  }
+
+  const availableUnits = Math.max(0, row.item.quantity - row.unitsSold);
+  // With several units the offer is per piece, so say so.
+  const perPiece = row.item.quantity > 1;
+
+  async function handleQuantity(next: number) {
+    setRowError(null);
+    const { error } = await supabase.from("wishlist_items").update({ quantity: next }).eq("id", row.wishlistId);
+    if (error) {
+      setRowError(error.message);
+      return;
+    }
+    onQuantitySaved(row.wishlistId, next);
   }
 
   async function handleSaveBid() {
@@ -179,9 +220,25 @@ function WishlistRow({
     <div className="border-b border-line py-2.5 last:border-b-0">
       <ItemChip item={row.item} />
 
+      {availableUnits > 1 && (
+        <div className="mt-1.5 flex items-center justify-between gap-3 px-1">
+          <p className="text-[13px] text-ink-soft">
+            Cantidad <span className="text-ink-faint">(hasta {availableUnits})</span>
+          </p>
+          <QuantityStepper value={Math.min(row.quantity, availableUnits)} max={availableUnits} onChange={handleQuantity} />
+        </div>
+      )}
+      {row.quantity > availableUnits && availableUnits >= 0 && (
+        <p className="mt-1 px-1 text-xs text-red-800">
+          {availableUnits === 0 ? "Ya no quedan unidades." : `Solo quedan ${availableUnits}.`}
+        </p>
+      )}
+
       <div className="mt-1.5 flex items-center justify-between gap-2 px-1">
         <p className="text-[13px] text-ink-soft">
-          {row.bidAmount != null ? `Tu oferta: ${formatCurrency(row.bidAmount)}` : "Sin oferta todavía"}
+          {row.bidAmount != null
+            ? `${perPiece ? "Tu oferta por pieza" : "Tu oferta"}: ${formatCurrency(row.bidAmount)}`
+            : "Sin oferta todavía"}
         </p>
         <div className="flex shrink-0 gap-2">
           <button
