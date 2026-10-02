@@ -998,7 +998,7 @@ export default function RevisionList() {
     if (search.trim()) {
       const term = normalizeSearch(search.trim());
       result = result.filter((i) =>
-        [i.name, i.brand, i.model, i.serial_number, i.location, i.description]
+        [i.name, i.ref_code, i.brand, i.model, i.serial_number, i.location, i.description]
           .filter(Boolean)
           .some((field) => normalizeSearch(field as string).includes(term)),
       );
@@ -1110,7 +1110,7 @@ export default function RevisionList() {
       <SearchFilterBar
         value={search}
         onChange={setSearch}
-        placeholder="Buscar por nombre, ubicación, marca, modelo o serie"
+        placeholder="Buscar por nombre, ref., ubicación, marca, modelo o serie"
         chips={chips}
         onRemoveChip={handleRemoveChip}
         onClearAll={

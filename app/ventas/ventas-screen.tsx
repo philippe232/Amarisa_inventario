@@ -216,7 +216,7 @@ export default function VentasScreen() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar artículo..."
+            placeholder="Buscar artículo o ref..."
             className="mt-3 h-11 w-full rounded-full border border-line-strong bg-page px-4 text-base text-ink placeholder:text-ink-faint focus:outline-none"
           />
         )}

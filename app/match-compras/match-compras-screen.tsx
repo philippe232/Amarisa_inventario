@@ -169,7 +169,7 @@ export default function MatchComprasScreen() {
     const q = search.trim().toLowerCase();
     return items.filter((item) => {
       if (q) {
-        const hay = [item.name, item.description, item.brand, item.model].filter(Boolean).join(" ").toLowerCase();
+        const hay = [item.name, item.ref_code, item.description, item.brand, item.model].filter(Boolean).join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (tierFiltro.size > 0) {
@@ -360,7 +360,7 @@ export default function MatchComprasScreen() {
       <SearchFilterBar
         value={search}
         onChange={setSearch}
-        placeholder="Buscar artículo..."
+        placeholder="Buscar artículo o ref..."
         chips={chips}
         onRemoveChip={handleRemoveChip}
         onClearAll={() => {

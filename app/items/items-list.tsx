@@ -146,7 +146,10 @@ export default function ItemsList() {
     if (search.trim()) {
       const term = normalizeSearch(search.trim());
       result = result.filter(
-        (i) => normalizeSearch(i.name).includes(term) || (i.description && normalizeSearch(i.description).includes(term)),
+        (i) =>
+          normalizeSearch(i.name).includes(term) ||
+          (i.description && normalizeSearch(i.description).includes(term)) ||
+          (i.ref_code && normalizeSearch(i.ref_code).includes(term)),
       );
     }
     if (areaFiltro.size > 0) result = result.filter((i) => i.area && areaFiltro.has(i.area));
@@ -210,7 +213,7 @@ export default function ItemsList() {
       <SearchFilterBar
         value={search}
         onChange={setSearch}
-        placeholder="Buscar artículo"
+        placeholder="Buscar artículo o ref."
         chips={chips}
         onRemoveChip={handleRemoveChip}
         onClearAll={
