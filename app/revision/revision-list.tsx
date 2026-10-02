@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ChevronDown, Flag, ImageOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrencyWhole } from "@/lib/currency";
 import { normalizeSearch } from "@/lib/normalize-search";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
@@ -33,15 +33,11 @@ const PRIORITY_RANK: Record<string, number> = Object.fromEntries(PRIORITY_OPTION
 const REVIEW_STATUS_RANK: Record<string, number> = Object.fromEntries(REVIEW_STATUS_OPTIONS.map((o, idx) => [o.value, idx]));
 
 // Not shared via a lib file — same as item-edit-form.tsx's own local
-// STATUS_OPTIONS/DATA_STATUS_OPTIONS, which aren't either.
+// STATUS_OPTIONS, which isn't either.
 const STATUS_OPTIONS = [
   { value: "for_sale", label: "En venta" },
   { value: "reserved", label: "Reservado" },
   { value: "sold", label: "Vendido" },
-];
-const DATA_STATUS_OPTIONS = [
-  { value: "fetched", label: "Obtenido (Claude)" },
-  { value: "verified", label: "Verificado" },
 ];
 
 type SortValue = string | number | null;
@@ -82,7 +78,7 @@ function fmtDate(iso: string): string {
 }
 
 function money(v: number | null): React.ReactNode {
-  return v != null ? formatCurrency(v) : <span className="text-ink-faint">—</span>;
+  return v != null ? formatCurrencyWhole(v) : <span className="text-ink-faint">—</span>;
 }
 
 // Signs a short-lived URL on demand, same as item-edit-form.tsx's
@@ -176,6 +172,43 @@ function InlineNumber({
       min={min}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={() => {
+        if (local !== value) onCommit(local);
+      }}
+      className={`${inlineInputClass} [font-variant-numeric:tabular-nums] ${className}`}
+    />
+  );
+}
+
+// Price cell: "$1,235" (whole pesos) at rest, the exact raw number while
+// focused so cents survive an edit — only the display is rounded.
+function InlineMoney({
+  value,
+  onCommit,
+  className = "",
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  className?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
+  const [focused, setFocused] = useState(false);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setLocal(value);
+  }
+  const shown = focused || local.trim() === "" ? local : formatCurrencyWhole(Number(local));
+  return (
+    <input
+      type={focused ? "number" : "text"}
+      inputMode="decimal"
+      value={shown}
+      step="0.01"
+      min="0"
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
         if (local !== value) onCommit(local);
       }}
       className={`${inlineInputClass} [font-variant-numeric:tabular-nums] ${className}`}
@@ -280,6 +313,9 @@ type ColumnDef = {
   key: string;
   group: GroupKey;
   label: string;
+  // Fixed px width for columns that hold something tiny (a count) —
+  // everything else sizes to its content.
+  width?: number;
   render: (item: Row, writeField: WriteFieldFn, pickerOptions: PickerOptions) => React.ReactNode;
   sortValue: (item: Row) => SortValue;
 };
@@ -290,11 +326,12 @@ const COLUMNS: ColumnDef[] = [
     key: "quantity",
     group: "encabezado",
     label: "Cant.",
+    width: 64,
     render: (i, writeField) => (
       <InlineNumber
         value={String(i.quantity)}
         min="1"
-        className="w-14"
+        className="min-w-0! [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         onCommit={(v) => writeField(i.id, "quantity", Math.max(1, Number(v) || 1), i.quantity)}
       />
     ),
@@ -318,26 +355,6 @@ const COLUMNS: ColumnDef[] = [
       </select>
     ),
     sortValue: (i) => i.status,
-  },
-  {
-    key: "data_status",
-    group: "encabezado",
-    label: "Datos",
-    render: (i, writeField) => (
-      <select
-        value={i.data_status ?? ""}
-        onChange={(e) => writeField(i.id, "data_status", e.target.value || null, i.data_status)}
-        className={inlineSelectClass}
-      >
-        <option value="">Sin dato</option>
-        {DATA_STATUS_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    ),
-    sortValue: (i) => i.data_status,
   },
   // Procesamiento — internal triage, not about what the article IS.
   {
@@ -567,10 +584,8 @@ const COLUMNS: ColumnDef[] = [
     group: "precio",
     label: "Compra",
     render: (i, writeField) => (
-      <InlineNumber
+      <InlineMoney
         value={i.purchase_price != null ? String(i.purchase_price) : ""}
-        step="0.01"
-        min="0"
         className="w-20"
         onCommit={(v) => writeField(i.id, "purchase_price", v.trim() === "" ? null : Number(v), i.purchase_price)}
       />
@@ -582,10 +597,8 @@ const COLUMNS: ColumnDef[] = [
     group: "precio",
     label: "Referencia",
     render: (i, writeField) => (
-      <InlineNumber
+      <InlineMoney
         value={i.reference_price != null ? String(i.reference_price) : ""}
-        step="0.01"
-        min="0"
         className="w-20"
         onCommit={(v) => writeField(i.id, "reference_price", v.trim() === "" ? null : Number(v), i.reference_price)}
       />
@@ -597,10 +610,8 @@ const COLUMNS: ColumnDef[] = [
     group: "precio",
     label: "Sugerido",
     render: (i, writeField) => (
-      <InlineNumber
+      <InlineMoney
         value={i.suggested_resale_price != null ? String(i.suggested_resale_price) : ""}
-        step="0.01"
-        min="0"
         className="w-20"
         onCommit={(v) => writeField(i.id, "suggested_resale_price", v.trim() === "" ? null : Number(v), i.suggested_resale_price)}
       />
@@ -612,10 +623,8 @@ const COLUMNS: ColumnDef[] = [
     group: "precio",
     label: "Venta (override)",
     render: (i, writeField) => (
-      <InlineNumber
+      <InlineMoney
         value={i.asking_price_override != null ? String(i.asking_price_override) : ""}
-        step="0.01"
-        min="0"
         className="w-20"
         onCommit={(v) => writeField(i.id, "asking_price_override", v.trim() === "" ? null : Number(v), i.asking_price_override)}
       />
@@ -1064,7 +1073,7 @@ export default function RevisionList() {
   }
 
   const activeColumns = useMemo(() => COLUMNS.filter((c) => visibleGroups.has(c.group)), [visibleGroups]);
-  const tableMinWidth = 220 + 120 + activeColumns.length * 150 + 220;
+  const tableMinWidth = 220 + 120 + activeColumns.reduce((sum, c) => sum + (c.width ?? 150), 0) + 220;
 
   if (roleLoading || !role) return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
 
@@ -1179,7 +1188,7 @@ export default function RevisionList() {
                 <p className="text-xs text-ink-soft">Total artículos</p>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
-                <p className="text-xl font-bold text-ink [font-variant-numeric:tabular-nums]">{formatCurrency(totalPrecioVenta)}</p>
+                <p className="text-xl font-bold text-ink [font-variant-numeric:tabular-nums]">{formatCurrencyWhole(totalPrecioVenta)}</p>
                 <p className="text-xs text-ink-soft">Precio de venta total</p>
               </div>
               <div className="rounded-md border border-line bg-card p-3">
@@ -1303,6 +1312,7 @@ export default function RevisionList() {
                                   active={sortState[area]?.key === c.key}
                                   dir={sortState[area]?.key === c.key ? sortState[area]?.dir : undefined}
                                   onSort={(key) => handleSort(area, key)}
+                                  width={c.width}
                                 />
                               ))}
                               <SortableTh
@@ -1344,7 +1354,11 @@ export default function RevisionList() {
                                     {item.ref_code ?? "—"}
                                   </td>
                                   {activeColumns.map((c) => (
-                                    <td key={c.key} className="max-w-[220px] px-2.5 py-2 align-top text-ink">
+                                    <td
+                                      key={c.key}
+                                      className="max-w-[220px] px-2.5 py-2 align-top text-ink"
+                                      style={c.width != null ? { width: c.width, minWidth: c.width, maxWidth: c.width } : undefined}
+                                    >
                                       {c.render(item, writeField, pickerOptions)}
                                     </td>
                                   ))}
