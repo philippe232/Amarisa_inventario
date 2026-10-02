@@ -39,19 +39,15 @@ function paymentMethodsLabel(payments: ItemSalePayment[]): string {
   return labels.length > 0 ? labels.join(", ") : "—";
 }
 
-// The item's own status IS the sale-progress indicator — no payments
-// yet (or no sale record at all) reads as whatever it already was
-// (for_sale unless something else reserved it), any payment at all but
-// short of the full total is "reserved", paid in full is "sold". One
-// computation, always run right after writing a sale or a payment, so
-// the queue's status badges never drift from what the payments actually
-// say. Computed across ALL of the item's sales: until every unit has
-// been sold the item stays for_sale — units are still available, and
-// the item's single status can't say "3 of 10 sold" — and once they all
-// have, it's sold only when everything owed across those sales is paid.
-function computeItemStatus(totalOwed: number, totalPaid: number, soldQty: number, itemQty: number): ItemStatus {
-  if (soldQty < itemQty) return "for_sale";
-  return totalOwed > 0 && totalPaid >= totalOwed ? "sold" : "reserved";
+// The item's own status (the "Venta" column in revisión, the badge in
+// the catalog) follows the units sold: every unit sold across its sales
+// reads as "sold", whether or not the money is all in yet — what's still
+// owed is tracked per sale (saldo), not here. Until the last unit goes
+// the item stays for_sale, since a single status can't say "3 of 10
+// sold" and the remaining units must stay visible in the catalog. Run
+// right after every sale is saved or deleted so the two never drift.
+function computeItemStatus(soldQty: number, itemQty: number): ItemStatus {
+  return soldQty >= itemQty ? "sold" : "for_sale";
 }
 
 export default function VentasScreen() {
@@ -137,14 +133,12 @@ export default function VentasScreen() {
 
   const soldCount = items.filter((i) => i.status === "sold").length;
 
-  // Takes the item's sales and payments explicitly (rather than reading
-  // state) because it runs right after a write, before React has applied
-  // the matching setState.
-  async function syncItemStatus(itemId: string, sales: ItemSale[], payments: Map<string, ItemSalePayment[]>) {
+  // Takes the item's sales explicitly (rather than reading state)
+  // because it runs right after a write, before React has applied the
+  // matching setState.
+  async function syncItemStatus(itemId: string, sales: ItemSale[]) {
     const itemQty = items.find((i) => i.id === itemId)?.quantity ?? 1;
-    const totalOwed = sales.reduce((s, x) => s + x.total_with_iva, 0);
-    const totalPaid = sales.reduce((s, x) => s + (payments.get(x.id) ?? []).reduce((a, p) => a + p.amount, 0), 0);
-    const newStatus = computeItemStatus(totalOwed, totalPaid, soldQtyOf(sales), itemQty);
+    const newStatus = computeItemStatus(soldQtyOf(sales), itemQty);
     const { error: err } = await supabase.from("items").update({ status: newStatus }).eq("id", itemId);
     if (err) {
       setError(err.message);
@@ -168,7 +162,7 @@ export default function VentasScreen() {
     const current = salesByItem.get(itemId) ?? [];
     const next = saleId ? current.map((s) => (s.id === saleId ? sale : s)) : [...current, sale];
     setSalesByItem((prev) => new Map(prev).set(itemId, next));
-    await syncItemStatus(itemId, next, paymentsBySale);
+    await syncItemStatus(itemId, next);
     return true;
   }
 
@@ -183,32 +177,25 @@ export default function VentasScreen() {
     nextPayments.delete(saleId);
     setSalesByItem((prev) => new Map(prev).set(itemId, next));
     setPaymentsBySale(nextPayments);
-    await syncItemStatus(itemId, next, nextPayments);
+    await syncItemStatus(itemId, next);
   }
 
-  async function addPayment(itemId: string, saleId: string, payment: PaymentInput) {
+  async function addPayment(saleId: string, payment: PaymentInput) {
     const { data, error: err } = await supabase.from("item_sale_payments").insert({ ...payment, item_sale_id: saleId }).select().single();
     if (err || !data) {
       setError(err?.message ?? "No se pudo guardar el pago");
       return;
     }
-    const nextPayments = new Map(paymentsBySale).set(saleId, [...(paymentsBySale.get(saleId) ?? []), data as ItemSalePayment]);
-    setPaymentsBySale(nextPayments);
-    await syncItemStatus(itemId, salesByItem.get(itemId) ?? [], nextPayments);
+    setPaymentsBySale((prev) => new Map(prev).set(saleId, [...(prev.get(saleId) ?? []), data as ItemSalePayment]));
   }
 
-  async function deletePayment(itemId: string, saleId: string, paymentId: string) {
+  async function deletePayment(saleId: string, paymentId: string) {
     const { error: err } = await supabase.from("item_sale_payments").delete().eq("id", paymentId);
     if (err) {
       setError(err.message);
       return;
     }
-    const nextPayments = new Map(paymentsBySale).set(
-      saleId,
-      (paymentsBySale.get(saleId) ?? []).filter((p) => p.id !== paymentId),
-    );
-    setPaymentsBySale(nextPayments);
-    await syncItemStatus(itemId, salesByItem.get(itemId) ?? [], nextPayments);
+    setPaymentsBySale((prev) => new Map(prev).set(saleId, (prev.get(saleId) ?? []).filter((p) => p.id !== paymentId)));
   }
 
   const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
@@ -293,8 +280,8 @@ export default function VentasScreen() {
                 onBack={() => setSelectedItemId(null)}
                 onSaveSale={(saleId, patch) => saveSale(selectedItem.id, saleId, patch)}
                 onDeleteSale={(saleId) => deleteSale(selectedItem.id, saleId)}
-                onAddPayment={(saleId, p) => addPayment(selectedItem.id, saleId, p)}
-                onDeletePayment={(saleId, paymentId) => deletePayment(selectedItem.id, saleId, paymentId)}
+                onAddPayment={addPayment}
+                onDeletePayment={deletePayment}
               />
             ) : (
               <p className="hidden p-4 text-sm text-ink-soft md:block">Selecciona un artículo de la lista.</p>
