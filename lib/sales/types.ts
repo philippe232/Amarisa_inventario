@@ -1,5 +1,5 @@
 // Mirrors db/migrations/0029_item_sales.sql, 0030's factura/SPEI
-// rework, 0032's quantity and 0034's payment_method — kept by hand, same convention as lib/types.ts for items.
+// rework, 0032's quantity, 0034's payment_method and 0035's orders — kept by hand, same convention as lib/types.ts for items.
 
 export type PaymentMethod = "efectivo" | "spei" | "otro";
 
@@ -25,11 +25,33 @@ export type ItemSale = {
   sold_by: string | null;
   sold_at: string;
   updated_at: string;
+  // Cart line (0035): the order it belongs to, and the exact amount paid
+  // for the line. Both null on rows from before orders existed.
+  order_id: string | null;
+  line_total: number | null;
 };
 
-export type ItemSalePayment = {
+export type OrderStatus = "open" | "closed";
+
+// A cart / pedido — one per buyer, holding article lines (ItemSale rows
+// with order_id set). Closing it is the "checkout".
+export type SaleOrder = {
   id: string;
-  item_sale_id: string;
+  name: string;
+  buyer_contact: string | null;
+  notes: string | null;
+  status: OrderStatus;
+  requires_invoice: boolean;
+  payment_method: PaymentMethod | null;
+  created_by: string | null;
+  created_at: string;
+  closed_at: string | null;
+  updated_at: string;
+};
+
+export type OrderPayment = {
+  id: string;
+  order_id: string;
   amount: number;
   method: PaymentMethod;
   paid_at: string;
