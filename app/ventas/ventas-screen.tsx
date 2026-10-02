@@ -17,7 +17,7 @@ type QueueItem = Pick<Item, "id" | "name" | "brand" | "model" | "area" | "quanti
   photoUrl: string | null;
 };
 
-type SalePatch = Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">;
+type SalePatch = Pick<ItemSale, "final_price" | "quantity" | "payment_method" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">;
 type PaymentInput = { amount: number; method: PaymentMethod; paid_at: string; note: string | null };
 
 function formatDate(d: string | null): string {
@@ -29,10 +29,9 @@ function soldQtyOf(sales: ItemSale[]): number {
   return sales.reduce((n, s) => n + s.quantity, 0);
 }
 
-// "Efectivo, SPEI" — the distinct ways this sale has actually been paid,
-// in the same order as the payment-method picker. Derived from the
-// payments themselves (each payment carries its own method), so a sale
-// settled half in cash and half by SPEI shows both.
+// "Efectivo, SPEI" — the distinct ways a sale has actually been paid,
+// in the same order as the payment-method picker. Only the fallback for
+// sales saved before they had a forma de pago of their own.
 function paymentMethodsLabel(payments: ItemSalePayment[]): string {
   const used = new Set(payments.map((p) => p.method));
   const labels = PAYMENT_METHOD_OPTIONS.filter((o) => used.has(o.value)).map((o) => o.label);
@@ -385,7 +384,9 @@ function ResumenView({
                 {sale.buyer_name ?? "Sin comprador"} · {formatDate(sale.sold_at)}
                 {sale.quantity > 1 && <> · {sale.quantity} pzas</>}
               </p>
-              <p className="truncate text-xs text-ink-soft">Forma de pago: {paymentMethodsLabel(payments)}</p>
+              <p className="truncate text-xs text-ink-soft">
+                Forma de pago: {sale.payment_method ? PAYMENT_METHOD_LABELS[sale.payment_method] : paymentMethodsLabel(payments)}
+              </p>
             </div>
             <div className="shrink-0 text-right">
               <p className="text-sm font-semibold text-ink">{formatCurrency(sale.total_with_iva)}</p>
@@ -527,6 +528,7 @@ function SaleCard({
 }) {
   const [finalPrice, setFinalPrice] = useState(sale ? String(sale.final_price) : "");
   const [quantity, setQuantity] = useState(sale ? String(sale.quantity) : "1");
+  const [saleMethod, setSaleMethod] = useState<PaymentMethod>(sale?.payment_method ?? "efectivo");
   const [requiresInvoice, setRequiresInvoice] = useState(sale?.requires_invoice ?? false);
   const [buyerName, setBuyerName] = useState(sale?.buyer_name ?? "");
   const [buyerContact, setBuyerContact] = useState(sale?.buyer_contact ?? "");
@@ -534,7 +536,9 @@ function SaleCard({
   const [saving, setSaving] = useState(false);
 
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
+  // null = follow the sale's own forma de pago until a payment says otherwise.
+  const [paymentMethodPick, setPaymentMethodPick] = useState<PaymentMethod | null>(null);
+  const paymentMethod = paymentMethodPick ?? sale?.payment_method ?? "efectivo";
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentNote, setPaymentNote] = useState("");
   const [addingPayment, setAddingPayment] = useState(false);
@@ -614,6 +618,21 @@ function SaleCard({
           </div>
         )}
 
+        <label className="block">
+          <span className="text-xs font-medium text-ink-soft">Forma de pago</span>
+          <select
+            value={saleMethod}
+            onChange={(e) => setSaleMethod(e.target.value as PaymentMethod)}
+            className="mt-1 h-10 w-full rounded-md border border-line-strong bg-card px-2 text-sm text-ink"
+          >
+            {PAYMENT_METHOD_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={requiresInvoice} onChange={(e) => setRequiresInvoice(e.target.checked)} className="h-4 w-4" />
           <span className="text-sm text-ink">Requiere factura</span>
@@ -667,6 +686,7 @@ function SaleCard({
               await onSave({
                 final_price: priceNumber,
                 quantity: qtyNumber,
+                payment_method: saleMethod,
                 requires_invoice: requiresInvoice,
                 buyer_name: buyerName.trim() || null,
                 buyer_contact: buyerContact.trim() || null,
@@ -736,7 +756,7 @@ function SaleCard({
             />
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+              onChange={(e) => setPaymentMethodPick(e.target.value as PaymentMethod)}
               className="h-9 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
             >
               {PAYMENT_METHOD_OPTIONS.map((o) => (

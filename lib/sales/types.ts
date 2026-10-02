@@ -1,5 +1,5 @@
 // Mirrors db/migrations/0029_item_sales.sql, 0030's factura/SPEI
-// rework and 0032's quantity — kept by hand, same convention as lib/types.ts for items.
+// rework, 0032's quantity and 0034's payment_method — kept by hand, same convention as lib/types.ts for items.
 
 export type PaymentMethod = "efectivo" | "spei" | "otro";
 
@@ -14,6 +14,8 @@ export type ItemSale = {
   // not an abstract "was it already included" toggle. iva_amount is
   // only ever non-null when this is true (16% of final_price);
   // total_with_iva is always "what's owed in total" either way.
+  // How the buyer is paying; null only on rows saved before 0034.
+  payment_method: PaymentMethod | null;
   requires_invoice: boolean;
   iva_amount: number | null;
   total_with_iva: number;
