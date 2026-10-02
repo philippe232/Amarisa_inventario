@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt, DollarSign } from "lucide-react";
+import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt, DollarSign, LayoutGrid } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 
@@ -10,10 +10,11 @@ import { useSessionInfo } from "@/lib/auth";
 // shape (fixed inset-0 flex, w-72 panel + flex-1 backdrop button, no
 // open animation) — simplified to a flat list since this app has no
 // sections/badges to account for.
-const VIEWER_NAV_ITEMS = [
-  { href: "/items", label: "Inicio", icon: Home },
-  { href: "/wishlist", label: "Mi lista", icon: Heart },
-];
+// Inicio is a placeholder for a welcome page still to be designed; the
+// catalog itself is Catálogo.
+const INICIO = { href: "/inicio", label: "Inicio", icon: Home };
+const CATALOGO = { href: "/items", label: "Catálogo", icon: LayoutGrid };
+const VIEWER_NAV_ITEMS = [INICIO, CATALOGO, { href: "/wishlist", label: "Mi lista", icon: Heart }];
 // Editor's surface: list/detail/edit, Revisión de Inventario, and
 // Precios de Compra. Owner gets all of that plus Ventas (0029) —
 // exclusive to Owner is the first real Editor/Owner permissions split
@@ -21,7 +22,8 @@ const VIEWER_NAV_ITEMS = [
 // ("role exists so that can diverge later... not because anything here
 // treats them differently yet") but nothing used it until now.
 const ADMIN_NAV_ITEMS = [
-  { href: "/items", label: "Inicio", icon: Home },
+  INICIO,
+  CATALOGO,
   { href: "/revision", label: "Revisión de Inventario", icon: ClipboardList },
   { href: "/match-compras", label: "Precios de Compra", icon: Receipt },
 ];
