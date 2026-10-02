@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, Flag, ImageOff } from "lucide-react";
+import { ChevronDown, Flag, ImageOff, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrencyWhole } from "@/lib/currency";
@@ -40,6 +40,13 @@ const STATUS_OPTIONS = [
   { value: "reserved", label: "Reservado" },
   { value: "sold", label: "Vendido" },
 ];
+
+// In-flight writeField calls. A refresh waits for these first so it can't
+// read a row before an edit that was just committed (the click that
+// triggers a refresh also blurs the cell being edited) and paint the
+// stale value back over it. Module-level because a ref read inside
+// writeField trips react-hooks/refs, and this screen is a singleton.
+const pendingWrites = new Set<Promise<void>>();
 
 type SortValue = string | number | null;
 type SortDir = "asc" | "desc";
@@ -821,6 +828,14 @@ export default function RevisionList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Bumping refreshKey re-runs the load effect below. Every filter, sort,
+  // collapsed área and column toggle lives in state of its own, so a
+  // refetch replaces only `items` and leaves all of them exactly as the
+  // user set them — no "Cargando..." blank-out after the first load.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
+  const hasLoadedRef = useRef(false);
   const [lightbox, setLightbox] = useState<{ photos: string[]; name: string } | null>(null);
   const openPhotos = useCallback((item: Row) => setLightbox({ photos: item.photoUrls, name: item.name }), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);
@@ -832,6 +847,7 @@ export default function RevisionList() {
   const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
   const [conditionFiltro, setConditionFiltro] = useState<Set<string>>(new Set());
   const [matchFiltro, setMatchFiltro] = useState<Set<string>>(new Set());
+  const [precioFiltro, setPrecioFiltro] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Keyed by área — each área's table sorts independently, since they're
   // rendered as separate <table>s and there's no reason picking a sort
@@ -855,7 +871,8 @@ export default function RevisionList() {
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
+      if (!hasLoadedRef.current) setLoading(true);
+      await Promise.all(Array.from(pendingWrites));
       // items directly, not items_public — this screen IS the masked
       // view's audience. item_photos ordered by sort_order so [0] per
       // item is always the primary photo (same convention as
@@ -872,6 +889,7 @@ export default function RevisionList() {
       if (itemsRes.error) {
         setError(itemsRes.error.message);
         setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -900,13 +918,21 @@ export default function RevisionList() {
       setItems(rows);
       setError(null);
       setLoading(false);
+      setRefreshing(false);
+      setLastLoadedAt(new Date());
+      hasLoadedRef.current = true;
     }
 
     load();
     return () => {
       cancelled = true;
     };
-  }, [supabase, role]);
+  }, [supabase, role, refreshKey]);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    setRefreshKey((k) => k + 1);
+  }
 
   const totalPrecioVenta = useMemo(
     () => items.reduce((sum, i) => sum + (i.asking_price ?? 0) * i.quantity, 0),
@@ -975,6 +1001,14 @@ export default function RevisionList() {
       return next;
     });
   }
+  function togglePrecio(value: string) {
+    setPrecioFiltro((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
   function toggleMatch(value: string) {
     setMatchFiltro((prev) => {
       const next = new Set(prev);
@@ -999,8 +1033,9 @@ export default function RevisionList() {
     if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
     if (conditionFiltro.size > 0) result = result.filter((i) => conditionFiltro.has(i.condition_rating ?? NONE));
     if (matchFiltro.size > 0) result = result.filter((i) => matchFiltro.has(i.matchStatus ?? NONE));
+    if (precioFiltro.size > 0) result = result.filter((i) => precioFiltro.has(i.asking_price != null ? "con" : "sin"));
     return result;
-  }, [items, search, priorityFiltro, reviewStatusFiltro, typeFiltro, conditionFiltro, matchFiltro]);
+  }, [items, search, priorityFiltro, reviewStatusFiltro, typeFiltro, conditionFiltro, matchFiltro, precioFiltro]);
 
   const chips: FilterChip[] = [
     ...Array.from(priorityFiltro).map((v) => ({ id: `priority:${v}`, label: v === NONE ? "Sin prioridad" : PRIORITY_LABELS[v as keyof typeof PRIORITY_LABELS] })),
@@ -1008,6 +1043,7 @@ export default function RevisionList() {
     ...Array.from(typeFiltro).map((v) => ({ id: `type:${v}`, label: v })),
     ...Array.from(conditionFiltro).map((v) => ({ id: `condition:${v}`, label: v === NONE ? "Sin condición" : CONDITION_LABELS[v as keyof typeof CONDITION_LABELS] })),
     ...Array.from(matchFiltro).map((v) => ({ id: `match:${v}`, label: v === NONE ? "Sin match" : MATCH_STATUS_LABELS[v as PurchaseMatchStatus] })),
+    ...Array.from(precioFiltro).map((v) => ({ id: `precio:${v}`, label: v === "con" ? "Con precio de venta" : "Sin precio de venta" })),
   ];
 
   function handleRemoveChip(id: string) {
@@ -1019,6 +1055,7 @@ export default function RevisionList() {
     else if (kind === "type") toggleType(value);
     else if (kind === "condition") toggleCondition(value);
     else if (kind === "match") toggleMatch(value);
+    else if (kind === "precio") togglePrecio(value);
   }
 
   const hasActiveFilters =
@@ -1027,7 +1064,8 @@ export default function RevisionList() {
     reviewStatusFiltro.size > 0 ||
     typeFiltro.size > 0 ||
     conditionFiltro.size > 0 ||
-    matchFiltro.size > 0;
+    matchFiltro.size > 0 ||
+    precioFiltro.size > 0;
 
   const grouped = useMemo(() => {
     const byArea = new Map<string, Row[]>();
@@ -1050,13 +1088,17 @@ export default function RevisionList() {
   // Writes straight to the DB (same immediate-write pattern as
   // PhotoManager/FacturaPdfUpload) — optimistic update first, reverted
   // (with a visible error banner) if the write fails.
-  const writeField: WriteFieldFn = async (itemId, field, value, revertValue) => {
+  const writeField: WriteFieldFn = (itemId, field, value, revertValue) => {
     setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: value } : i)));
-    const { error: updateError } = await supabase.from("items").update({ [field]: value }).eq("id", itemId);
-    if (updateError) {
-      setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: revertValue } : i)));
-      setSaveError(updateError.message);
-    }
+    const write = (async () => {
+      const { error: updateError } = await supabase.from("items").update({ [field]: value }).eq("id", itemId);
+      if (updateError) {
+        setItems((current) => current.map((i) => (i.id === itemId ? { ...i, [field]: revertValue } : i)));
+        setSaveError(updateError.message);
+      }
+    })();
+    pendingWrites.add(write);
+    void write.finally(() => pendingWrites.delete(write));
   };
 
   function handleSort(area: string, key: string) {
@@ -1105,6 +1147,7 @@ export default function RevisionList() {
                 setTypeFiltro(new Set());
                 setConditionFiltro(new Set());
                 setMatchFiltro(new Set());
+                setPrecioFiltro(new Set());
               }
             : undefined
         }
@@ -1164,6 +1207,18 @@ export default function RevisionList() {
             </div>
 
             <div>
+              <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Precio de venta</span>
+              <div className="flex flex-wrap gap-2">
+                <Pill active={precioFiltro.has("sin")} onClick={() => togglePrecio("sin")}>
+                  Sin precio
+                </Pill>
+                <Pill active={precioFiltro.has("con")} onClick={() => togglePrecio("con")}>
+                  Con precio
+                </Pill>
+              </div>
+            </div>
+
+            <div>
               <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Match</span>
               <div className="flex flex-wrap gap-2">
                 {MATCH_STATUS_OPTIONS.map((opt) => (
@@ -1181,6 +1236,23 @@ export default function RevisionList() {
       />
 
       <div className="px-3.5 py-3">
+        <div className="mb-3 flex items-center justify-end gap-2.5">
+          {lastLoadedAt && (
+            <span className="text-xs text-ink-faint [font-variant-numeric:tabular-nums]">
+              Actualizado {lastLoadedAt.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-card px-3 text-xs font-semibold text-ink hover:bg-page disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+            Actualizar
+          </button>
+        </div>
+
         {loading ? (
           <p className="p-4 text-sm text-ink-soft">Cargando...</p>
         ) : error ? (
