@@ -41,6 +41,10 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
   // closed in /ventas): the row is crossed out and says "Vendido" where
   // the price was.
   const sold = item.status === "sold";
+  // Some units gone but not all: the item stays for sale, with the
+  // count in dark red under the price.
+  const unitsSold = item.units_sold ?? 0;
+  const partlySold = !sold && unitsSold > 0;
 
   return (
     <Row variant="line" href={href}>
@@ -74,6 +78,11 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
         ) : (
           <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
             {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}
+          </p>
+        )}
+        {partlySold && (
+          <p className="mt-0.5 text-[12px] font-bold text-red-800 [font-variant-numeric:tabular-nums]">
+            Vendido {unitsSold} de {item.quantity}
           </p>
         )}
         {!sold && (item.purchase_price != null || item.discount_pct != null) && (
