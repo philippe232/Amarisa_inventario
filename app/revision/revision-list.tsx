@@ -601,32 +601,6 @@ const COLUMNS: ColumnDef[] = [
     sortValue: (i) => i.purchase_price,
   },
   {
-    key: "reference_price",
-    group: "precio",
-    label: "Referencia",
-    render: (i, writeField) => (
-      <InlineMoney
-        value={i.reference_price != null ? String(i.reference_price) : ""}
-        className="w-20"
-        onCommit={(v) => writeField(i.id, "reference_price", v.trim() === "" ? null : Number(v), i.reference_price)}
-      />
-    ),
-    sortValue: (i) => i.reference_price,
-  },
-  {
-    key: "suggested_resale_price",
-    group: "precio",
-    label: "Sugerido",
-    render: (i, writeField) => (
-      <InlineMoney
-        value={i.suggested_resale_price != null ? String(i.suggested_resale_price) : ""}
-        className="w-20"
-        onCommit={(v) => writeField(i.id, "suggested_resale_price", v.trim() === "" ? null : Number(v), i.suggested_resale_price)}
-      />
-    ),
-    sortValue: (i) => i.suggested_resale_price,
-  },
-  {
     key: "asking_price_override",
     group: "precio",
     label: "Venta (override)",
@@ -643,7 +617,8 @@ const COLUMNS: ColumnDef[] = [
     // Generated column ("asking_price_override if set, else
     // suggested_resale_price" — db/migrations/0006) — Postgres itself
     // rejects a direct UPDATE to it, so it stays read-only here on
-    // purpose. Edit "Venta (override)" or "Sugerido" instead.
+    // purpose. Edit "Venta (override)" here, or Sugerido in the item's
+    // edit form (not a table column).
     key: "asking_price",
     group: "precio",
     label: "Público",
