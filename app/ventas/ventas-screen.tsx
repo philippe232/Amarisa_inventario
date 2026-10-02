@@ -17,9 +17,26 @@ type QueueItem = Pick<Item, "id" | "name" | "brand" | "model" | "area" | "quanti
   photoUrl: string | null;
 };
 
+type SalePatch = Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">;
+type PaymentInput = { amount: number; method: PaymentMethod; paid_at: string; note: string | null };
+
 function formatDate(d: string | null): string {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function soldQtyOf(sales: ItemSale[]): number {
+  return sales.reduce((n, s) => n + s.quantity, 0);
+}
+
+// "Efectivo, SPEI" — the distinct ways this sale has actually been paid,
+// in the same order as the payment-method picker. Derived from the
+// payments themselves (each payment carries its own method), so a sale
+// settled half in cash and half by SPEI shows both.
+function paymentMethodsLabel(payments: ItemSalePayment[]): string {
+  const used = new Set(payments.map((p) => p.method));
+  const labels = PAYMENT_METHOD_OPTIONS.filter((o) => used.has(o.value)).map((o) => o.label);
+  return labels.length > 0 ? labels.join(", ") : "—";
 }
 
 // The item's own status IS the sale-progress indicator — no payments
@@ -28,10 +45,10 @@ function formatDate(d: string | null): string {
 // short of the full total is "reserved", paid in full is "sold". One
 // computation, always run right after writing a sale or a payment, so
 // the queue's status badges never drift from what the payments actually
-// say. A sale covering only PART of a multi-unit item never moves the
-// item off for_sale — units are still available, and the item's single
-// status can't say "3 of 10 sold" — so only a sale of every unit gets
-// the reserved/sold treatment.
+// say. Computed across ALL of the item's sales: until every unit has
+// been sold the item stays for_sale — units are still available, and
+// the item's single status can't say "3 of 10 sold" — and once they all
+// have, it's sold only when everything owed across those sales is paid.
 function computeItemStatus(totalOwed: number, totalPaid: number, soldQty: number, itemQty: number): ItemStatus {
   if (soldQty < itemQty) return "for_sale";
   return totalOwed > 0 && totalPaid >= totalOwed ? "sold" : "reserved";
@@ -45,7 +62,9 @@ export default function VentasScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<QueueItem[]>([]);
-  const [salesByItem, setSalesByItem] = useState<Map<string, ItemSale>>(new Map());
+  // An item can have several sales (units sold to different buyers),
+  // oldest first.
+  const [salesByItem, setSalesByItem] = useState<Map<string, ItemSale[]>>(new Map());
   const [paymentsBySale, setPaymentsBySale] = useState<Map<string, ItemSalePayment[]>>(new Map());
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -71,7 +90,7 @@ export default function VentasScreen() {
           .select("id, name, brand, model, area, quantity, ref_code, status, asking_price, item_photos(url)")
           .order("sort_order", { referencedTable: "item_photos" })
           .order("name"),
-        supabase.from("item_sales").select("*"),
+        supabase.from("item_sales").select("*").order("sold_at"),
         supabase.from("item_sale_payments").select("*").order("paid_at"),
       ]);
       if (cancelled) return;
@@ -88,7 +107,12 @@ export default function VentasScreen() {
           return { ...row, photoUrl: photos?.[0]?.url ?? null } as QueueItem;
         }),
       );
-      setSalesByItem(new Map((salesRes.data ?? []).map((s) => [s.item_id, s as ItemSale])));
+      const bySale = new Map<string, ItemSale[]>();
+      for (const s of (salesRes.data ?? []) as ItemSale[]) {
+        if (!bySale.has(s.item_id)) bySale.set(s.item_id, []);
+        bySale.get(s.item_id)!.push(s);
+      }
+      setSalesByItem(bySale);
       const byPayment = new Map<string, ItemSalePayment[]>();
       for (const p of (paymentsRes.data ?? []) as ItemSalePayment[]) {
         if (!byPayment.has(p.item_sale_id)) byPayment.set(p.item_sale_id, []);
@@ -113,11 +137,14 @@ export default function VentasScreen() {
 
   const soldCount = items.filter((i) => i.status === "sold").length;
 
-  async function syncItemStatus(itemId: string, sale: ItemSale | undefined, payments: ItemSalePayment[]) {
+  // Takes the item's sales and payments explicitly (rather than reading
+  // state) because it runs right after a write, before React has applied
+  // the matching setState.
+  async function syncItemStatus(itemId: string, sales: ItemSale[], payments: Map<string, ItemSalePayment[]>) {
     const itemQty = items.find((i) => i.id === itemId)?.quantity ?? 1;
-    const newStatus: ItemStatus = sale
-      ? computeItemStatus(sale.total_with_iva, payments.reduce((s, p) => s + p.amount, 0), sale.quantity, itemQty)
-      : "for_sale";
+    const totalOwed = sales.reduce((s, x) => s + x.total_with_iva, 0);
+    const totalPaid = sales.reduce((s, x) => s + (payments.get(x.id) ?? []).reduce((a, p) => a + p.amount, 0), 0);
+    const newStatus = computeItemStatus(totalOwed, totalPaid, soldQtyOf(sales), itemQty);
     const { error: err } = await supabase.from("items").update({ status: newStatus }).eq("id", itemId);
     if (err) {
       setError(err.message);
@@ -126,53 +153,48 @@ export default function VentasScreen() {
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, status: newStatus } : i)));
   }
 
-  async function saveSale(itemId: string, patch: Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) {
-    const existing = salesByItem.get(itemId);
-    const { data, error: err } = await supabase
-      .from("item_sales")
-      .upsert({ ...(existing ? { id: existing.id } : {}), item_id: itemId, ...patch, sold_by: email }, { onConflict: "item_id" })
-      .select()
-      .single();
+  // saleId null = a new sale. Returns whether it saved, so the form can
+  // stay open with what was typed if it didn't.
+  async function saveSale(itemId: string, saleId: string | null, patch: SalePatch): Promise<boolean> {
+    const query = saleId
+      ? supabase.from("item_sales").update({ ...patch, sold_by: email }).eq("id", saleId)
+      : supabase.from("item_sales").insert({ item_id: itemId, ...patch, sold_by: email });
+    const { data, error: err } = await query.select().single();
     if (err || !data) {
       setError(err?.message ?? "No se pudo guardar la venta");
-      return;
+      return false;
     }
     const sale = data as ItemSale;
-    setSalesByItem((prev) => new Map(prev).set(itemId, sale));
-    await syncItemStatus(itemId, sale, paymentsBySale.get(sale.id) ?? []);
+    const current = salesByItem.get(itemId) ?? [];
+    const next = saleId ? current.map((s) => (s.id === saleId ? sale : s)) : [...current, sale];
+    setSalesByItem((prev) => new Map(prev).set(itemId, next));
+    await syncItemStatus(itemId, next, paymentsBySale);
+    return true;
   }
 
-  async function deleteSale(itemId: string) {
-    const sale = salesByItem.get(itemId);
-    if (!sale) return;
-    const { error: err } = await supabase.from("item_sales").delete().eq("id", sale.id);
+  async function deleteSale(itemId: string, saleId: string) {
+    const { error: err } = await supabase.from("item_sales").delete().eq("id", saleId);
     if (err) {
       setError(err.message);
       return;
     }
-    setSalesByItem((prev) => {
-      const next = new Map(prev);
-      next.delete(itemId);
-      return next;
-    });
-    setPaymentsBySale((prev) => {
-      const next = new Map(prev);
-      next.delete(sale.id);
-      return next;
-    });
-    await syncItemStatus(itemId, undefined, []);
+    const next = (salesByItem.get(itemId) ?? []).filter((s) => s.id !== saleId);
+    const nextPayments = new Map(paymentsBySale);
+    nextPayments.delete(saleId);
+    setSalesByItem((prev) => new Map(prev).set(itemId, next));
+    setPaymentsBySale(nextPayments);
+    await syncItemStatus(itemId, next, nextPayments);
   }
 
-  async function addPayment(itemId: string, saleId: string, payment: { amount: number; method: PaymentMethod; paid_at: string; note: string | null }) {
+  async function addPayment(itemId: string, saleId: string, payment: PaymentInput) {
     const { data, error: err } = await supabase.from("item_sale_payments").insert({ ...payment, item_sale_id: saleId }).select().single();
     if (err || !data) {
       setError(err?.message ?? "No se pudo guardar el pago");
       return;
     }
-    const next = [...(paymentsBySale.get(saleId) ?? []), data as ItemSalePayment];
-    setPaymentsBySale((prev) => new Map(prev).set(saleId, next));
-    const sale = salesByItem.get(itemId);
-    if (sale) await syncItemStatus(itemId, sale, next);
+    const nextPayments = new Map(paymentsBySale).set(saleId, [...(paymentsBySale.get(saleId) ?? []), data as ItemSalePayment]);
+    setPaymentsBySale(nextPayments);
+    await syncItemStatus(itemId, salesByItem.get(itemId) ?? [], nextPayments);
   }
 
   async function deletePayment(itemId: string, saleId: string, paymentId: string) {
@@ -181,10 +203,12 @@ export default function VentasScreen() {
       setError(err.message);
       return;
     }
-    const next = (paymentsBySale.get(saleId) ?? []).filter((p) => p.id !== paymentId);
-    setPaymentsBySale((prev) => new Map(prev).set(saleId, next));
-    const sale = salesByItem.get(itemId);
-    if (sale) await syncItemStatus(itemId, sale, next);
+    const nextPayments = new Map(paymentsBySale).set(
+      saleId,
+      (paymentsBySale.get(saleId) ?? []).filter((p) => p.id !== paymentId),
+    );
+    setPaymentsBySale(nextPayments);
+    await syncItemStatus(itemId, salesByItem.get(itemId) ?? [], nextPayments);
   }
 
   const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
@@ -234,22 +258,28 @@ export default function VentasScreen() {
           <div
             className={`${selectedItemId ? "hidden md:block" : ""} space-y-1.5 px-3.5 py-3 md:overflow-y-auto md:px-0 md:py-3 md:[height:calc(100dvh-160px)]`}
           >
-            {filteredItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedItemId(item.id)}
-                className={`flex w-full items-center gap-2.5 rounded-md border px-3 py-2.5 text-left ${
-                  selectedItemId === item.id ? "border-ink bg-page" : "border-line bg-card"
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
-                  <p className="truncate text-xs text-ink-soft">{item.area ?? "—"}</p>
-                </div>
-                <StatusBadge status={item.status} />
-              </button>
-            ))}
+            {filteredItems.map((item) => {
+              const soldQty = soldQtyOf(salesByItem.get(item.id) ?? []);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedItemId(item.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-md border px-3 py-2.5 text-left ${
+                    selectedItemId === item.id ? "border-ink bg-page" : "border-line bg-card"
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
+                    <p className="truncate text-xs text-ink-soft">
+                      {item.area ?? "—"}
+                      {soldQty > 0 && item.quantity > 1 && <> · {soldQty}/{item.quantity} vendidas</>}
+                    </p>
+                  </div>
+                  <StatusBadge status={item.status} />
+                </button>
+              );
+            })}
             {filteredItems.length === 0 && <p className="p-4 text-sm text-ink-soft">Sin artículos.</p>}
           </div>
 
@@ -258,19 +288,13 @@ export default function VentasScreen() {
               <ItemSalePanel
                 key={selectedItem.id}
                 item={selectedItem}
-                sale={salesByItem.get(selectedItem.id) ?? null}
-                payments={salesByItem.get(selectedItem.id) ? (paymentsBySale.get(salesByItem.get(selectedItem.id)!.id) ?? []) : []}
+                sales={salesByItem.get(selectedItem.id) ?? []}
+                paymentsBySale={paymentsBySale}
                 onBack={() => setSelectedItemId(null)}
-                onSaveSale={(patch) => saveSale(selectedItem.id, patch)}
-                onDeleteSale={() => deleteSale(selectedItem.id)}
-                onAddPayment={async (p) => {
-                  const sale = salesByItem.get(selectedItem.id);
-                  if (sale) await addPayment(selectedItem.id, sale.id, p);
-                }}
-                onDeletePayment={async (paymentId) => {
-                  const sale = salesByItem.get(selectedItem.id);
-                  if (sale) await deletePayment(selectedItem.id, sale.id, paymentId);
-                }}
+                onSaveSale={(saleId, patch) => saveSale(selectedItem.id, saleId, patch)}
+                onDeleteSale={(saleId) => deleteSale(selectedItem.id, saleId)}
+                onAddPayment={(saleId, p) => addPayment(selectedItem.id, saleId, p)}
+                onDeletePayment={(saleId, paymentId) => deletePayment(selectedItem.id, saleId, paymentId)}
               />
             ) : (
               <p className="hidden p-4 text-sm text-ink-soft md:block">Selecciona un artículo de la lista.</p>
@@ -295,7 +319,7 @@ function ResumenView({
   onSelectItem,
 }: {
   items: QueueItem[];
-  salesByItem: Map<string, ItemSale>;
+  salesByItem: Map<string, ItemSale[]>;
   paymentsBySale: Map<string, ItemSalePayment[]>;
   onSelectItem: (itemId: string) => void;
 }) {
@@ -303,12 +327,13 @@ function ResumenView({
 
   const rows = useMemo(
     () =>
-      [...salesByItem.entries()]
-        .map(([itemId, sale]) => {
-          const item = itemsById.get(itemId);
+      [...salesByItem.values()]
+        .flat()
+        .map((sale) => {
+          const item = itemsById.get(sale.item_id);
           const payments = paymentsBySale.get(sale.id) ?? [];
           const paid = payments.reduce((s, p) => s + p.amount, 0);
-          return { item, sale, paid, saldo: Math.max(0, sale.total_with_iva - paid) };
+          return { item, sale, payments, paid, saldo: Math.max(0, sale.total_with_iva - paid) };
         })
         .filter((r): r is typeof r & { item: QueueItem } => Boolean(r.item))
         .sort((a, b) => b.sale.sold_at.localeCompare(a.sale.sold_at)),
@@ -320,8 +345,8 @@ function ResumenView({
   const saldoPendiente = rows.reduce((s, r) => s + r.saldo, 0);
 
   const byMethod = new Map<string, number>();
-  for (const sale of salesByItem.values()) {
-    for (const p of paymentsBySale.get(sale.id) ?? []) {
+  for (const r of rows) {
+    for (const p of r.payments) {
       byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + p.amount);
     }
   }
@@ -360,7 +385,7 @@ function ResumenView({
       )}
 
       <div className="mt-4 space-y-1.5">
-        {rows.map(({ item, sale, saldo }) => (
+        {rows.map(({ item, sale, payments, saldo }) => (
           <button
             key={sale.id}
             type="button"
@@ -373,6 +398,7 @@ function ResumenView({
                 {sale.buyer_name ?? "Sin comprador"} · {formatDate(sale.sold_at)}
                 {sale.quantity > 1 && <> · {sale.quantity} pzas</>}
               </p>
+              <p className="truncate text-xs text-ink-soft">Forma de pago: {paymentMethodsLabel(payments)}</p>
             </div>
             <div className="shrink-0 text-right">
               <p className="text-sm font-semibold text-ink">{formatCurrency(sale.total_with_iva)}</p>
@@ -386,10 +412,14 @@ function ResumenView({
   );
 }
 
+// --------------------------------------------------------------------
+// One article's sales: a card per sale (its own buyer, price, factura
+// and payments) plus a form for the next one while units remain.
+// --------------------------------------------------------------------
 function ItemSalePanel({
   item,
-  sale,
-  payments,
+  sales,
+  paymentsBySale,
   onBack,
   onSaveSale,
   onDeleteSale,
@@ -397,13 +427,116 @@ function ItemSalePanel({
   onDeletePayment,
 }: {
   item: QueueItem;
-  sale: ItemSale | null;
-  payments: ItemSalePayment[];
+  sales: ItemSale[];
+  paymentsBySale: Map<string, ItemSalePayment[]>;
   onBack: () => void;
-  onSaveSale: (patch: Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) => Promise<void>;
-  onDeleteSale: () => Promise<void>;
-  onAddPayment: (p: { amount: number; method: PaymentMethod; paid_at: string; note: string | null }) => Promise<void>;
-  onDeletePayment: (paymentId: string) => Promise<void>;
+  onSaveSale: (saleId: string | null, patch: SalePatch) => Promise<boolean>;
+  onDeleteSale: (saleId: string) => Promise<void>;
+  onAddPayment: (saleId: string, p: PaymentInput) => Promise<void>;
+  onDeletePayment: (saleId: string, paymentId: string) => Promise<void>;
+}) {
+  const [adding, setAdding] = useState(false);
+
+  const soldQty = soldQtyOf(sales);
+  const available = item.quantity - soldQty;
+  // With no sales yet the form is simply there; afterwards it opens on
+  // demand, and only while units remain.
+  const showDraft = sales.length === 0 || (adding && available > 0);
+
+  return (
+    <div className="space-y-4 pb-6">
+      <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-sm text-ink-soft md:hidden">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver
+      </button>
+
+      <div className="flex items-start gap-3">
+        {item.photoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-ink">{getDisplayName(item)}</p>
+          <p className="text-sm text-ink-soft">
+            {item.area ?? "—"} · Cant. {item.quantity} {item.ref_code && <>· {item.ref_code}</>}
+          </p>
+          {item.quantity > 1 && sales.length > 0 && (
+            <p className="mt-0.5 text-xs text-ink-soft">
+              Vendidas {soldQty} de {item.quantity} · Disponibles {Math.max(0, available)}
+            </p>
+          )}
+        </div>
+        <StatusBadge status={item.status} />
+      </div>
+
+      {sales.map((sale, idx) => (
+        <SaleCard
+          key={sale.id}
+          item={item}
+          title={`Venta ${idx + 1}`}
+          sale={sale}
+          maxQty={item.quantity - (soldQty - sale.quantity)}
+          payments={paymentsBySale.get(sale.id) ?? []}
+          onSave={(patch) => onSaveSale(sale.id, patch)}
+          onDelete={() => onDeleteSale(sale.id)}
+          onAddPayment={(p) => onAddPayment(sale.id, p)}
+          onDeletePayment={(paymentId) => onDeletePayment(sale.id, paymentId)}
+        />
+      ))}
+
+      {showDraft && (
+        <SaleCard
+          key="new"
+          item={item}
+          title={sales.length === 0 ? "Datos de la venta" : "Nueva venta"}
+          sale={null}
+          maxQty={available}
+          payments={[]}
+          onSave={async (patch) => {
+            const saved = await onSaveSale(null, patch);
+            if (saved) setAdding(false);
+            return saved;
+          }}
+          onCancel={sales.length > 0 ? () => setAdding(false) : undefined}
+        />
+      )}
+
+      {!showDraft && sales.length > 0 && available > 0 && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="flex min-h-10 items-center gap-1.5 rounded-md border border-line-strong bg-card px-3 text-sm font-semibold text-ink"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" /> Agregar otra venta ({available} disponibles)
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SaleCard({
+  item,
+  title,
+  sale,
+  maxQty,
+  payments,
+  onSave,
+  onDelete,
+  onCancel,
+  onAddPayment,
+  onDeletePayment,
+}: {
+  item: QueueItem;
+  title: string;
+  sale: ItemSale | null;
+  // Most units this sale can cover: the item's quantity minus what its
+  // other sales already took.
+  maxQty: number;
+  payments: ItemSalePayment[];
+  onSave: (patch: SalePatch) => Promise<boolean>;
+  onDelete?: () => Promise<void>;
+  onCancel?: () => void;
+  onAddPayment?: (p: PaymentInput) => Promise<void>;
+  onDeletePayment?: (paymentId: string) => Promise<void>;
 }) {
   const [finalPrice, setFinalPrice] = useState(sale ? String(sale.final_price) : "");
   const [quantity, setQuantity] = useState(sale ? String(sale.quantity) : "1");
@@ -422,11 +555,10 @@ function ItemSalePanel({
   // Only multi-unit items get a quantity field; a single piece is always
   // quantity 1. The price field is per piece, so everything owed scales
   // with the units sold.
-  const maxQty = item.quantity;
-  const multi = maxQty > 1;
+  const multi = item.quantity > 1;
   const qtyNumber = multi ? Math.floor(Number(quantity)) || 0 : 1;
   const qtyValid = qtyNumber >= 1 && qtyNumber <= maxQty;
-  const units = Math.min(Math.max(qtyNumber, 1), maxQty);
+  const units = Math.min(Math.max(qtyNumber, 1), Math.max(maxQty, 1));
 
   const priceNumber = Number(finalPrice) || 0;
   const subtotal = Math.round(priceNumber * units * 100) / 100;
@@ -441,27 +573,12 @@ function ItemSalePanel({
   const discountPct = askingPrice != null && askingPrice > 0 ? (discountAmount! / askingPrice) * 100 : null;
 
   return (
-    <div className="space-y-4 pb-6">
-      <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-sm text-ink-soft md:hidden">
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver
-      </button>
-
-      <div className="flex items-start gap-3">
-        {item.photoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="font-bold text-ink">{getDisplayName(item)}</p>
-          <p className="text-sm text-ink-soft">
-            {item.area ?? "—"} · Cant. {item.quantity} {item.ref_code && <>· {item.ref_code}</>}
-          </p>
-        </div>
-        <StatusBadge status={item.status} />
-      </div>
-
+    <div className="space-y-4">
       <div className="space-y-3 rounded-md border border-line bg-card p-3">
-        <p className="text-sm font-semibold text-ink">Datos de la venta</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-sm font-semibold text-ink">{title}</p>
+          {sale && <p className="text-xs text-ink-soft">{formatDate(sale.sold_at)}</p>}
+        </div>
         <label className="block">
           <span className="text-xs font-medium text-ink-soft">Precio de venta (lista)</span>
           <p className="mt-1 flex h-10 w-full items-center rounded-md border border-line bg-page px-2 text-sm text-ink-soft">
@@ -470,7 +587,7 @@ function ItemSalePanel({
         </label>
         {multi && (
           <label className="block">
-            <span className="text-xs font-medium text-ink-soft">Cantidad (de {maxQty})</span>
+            <span className="text-xs font-medium text-ink-soft">Cantidad (de {maxQty} disponibles)</span>
             <input
               type="number"
               min={1}
@@ -506,7 +623,7 @@ function ItemSalePanel({
             <p>
               {units} × {formatCurrency(priceNumber)} = <span className="font-semibold">{formatCurrency(subtotal)}</span>
             </p>
-            {units < maxQty && <p className="mt-0.5 text-xs text-ink-soft">Quedan {maxQty - units} en venta.</p>}
+            {units < maxQty && <p className="mt-0.5 text-xs text-ink-soft">Quedan {maxQty - units} sin vender.</p>}
           </div>
         )}
 
@@ -560,7 +677,7 @@ function ItemSalePanel({
             disabled={saving || !finalPrice || !qtyValid}
             onClick={async () => {
               setSaving(true);
-              await onSaveSale({
+              await onSave({
                 final_price: priceNumber,
                 quantity: qtyNumber,
                 requires_invoice: requiresInvoice,
@@ -574,10 +691,19 @@ function ItemSalePanel({
           >
             {sale ? "Guardar cambios" : "Registrar venta"}
           </button>
-          {sale && (
+          {onCancel && (
             <button
               type="button"
-              onClick={onDeleteSale}
+              onClick={onCancel}
+              className="flex min-h-10 items-center rounded-md border border-line-strong px-3 text-sm font-semibold text-ink"
+            >
+              Cancelar
+            </button>
+          )}
+          {sale && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
               className="flex min-h-10 items-center rounded-md border border-negative/30 bg-negative/5 px-3 text-sm font-semibold text-negative"
             >
               Eliminar venta
@@ -586,7 +712,7 @@ function ItemSalePanel({
         </div>
       </div>
 
-      {sale && (
+      {sale && onAddPayment && onDeletePayment && (
         <div className="space-y-3 rounded-md border border-line bg-card p-3">
           <div className="flex items-baseline justify-between">
             <p className="text-sm font-semibold text-ink">Pagos</p>
