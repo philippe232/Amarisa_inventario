@@ -7,7 +7,9 @@ import { titleForPath } from "@/lib/nav";
 
 // Ported from reference/cereza/app/(shell)/top-bar.tsx's layout (h-14
 // header, hamburger button left, balancing spacer right so the title
-// stays centered). Shows the name of the drawer screen you're on (Ventas,
+// stays centered). Pinned to the top while the page scrolls — above the
+// search bar that sticks right beneath it (top-14), below the drawer and
+// sheets. Shows the name of the drawer screen you're on (Ventas,
 // Catálogo...), the "Amarisa" brand outside the drawer's screens, and
 // whatever a page asks for via useTopBar — an article's page puts its
 // name and ref# here, with a back button on the left and the menu on the
@@ -36,7 +38,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
     }
 
     return (
-      <header className="grid h-14 shrink-0 grid-cols-[3rem_1fr_3rem] items-center border-b border-line bg-card px-3">
+      <header className="sticky top-0 z-[15] grid h-14 shrink-0 grid-cols-[3rem_1fr_3rem] items-center border-b border-line bg-card px-3">
         {config.back ? (
           <button
             type="button"
@@ -61,7 +63,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-card px-3">
+    <header className="sticky top-0 z-[15] flex h-14 shrink-0 items-center justify-between border-b border-line bg-card px-3">
       {menuButton}
 
       <h1 className="text-base font-bold text-ink">{screenTitle ?? "Amarisa"}</h1>

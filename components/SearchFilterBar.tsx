@@ -84,7 +84,7 @@ export default function SearchFilterBar({
 
   return (
     <div
-      className={`sticky top-0 z-10 border-b border-line bg-card px-3.5 py-2 transition-transform duration-200 ease-out ${
+      className={`sticky top-14 z-10 border-b border-line bg-card px-3.5 py-2 transition-transform duration-200 ease-out ${
         effectivelyHidden ? "-translate-y-full" : "translate-y-0"
       }`}
     >
