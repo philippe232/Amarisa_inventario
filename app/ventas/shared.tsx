@@ -25,3 +25,42 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
     </span>
   );
 }
+
+// A buyer's "Mi lista", as returned to the owner by owner_wishlists()
+// (db/migrations/0037): one row per listed article.
+export type WishRow = {
+  user_id: string;
+  email: string | null;
+  is_anonymous: boolean;
+  item_id: string;
+  bid_amount: number | string | null;
+  created_at: string;
+};
+
+export type BuyerList = {
+  key: string;
+  email: string | null;
+  anonymous: boolean;
+  items: { itemId: string; bid: number | null; addedAt: string }[];
+  lastAt: string;
+};
+
+export function listLabel(list: Pick<BuyerList, "email" | "key">): string {
+  return list.email ?? `Anónimo · ${list.key.slice(0, 4)}`;
+}
+
+// Lists with a linked email first (the ones the owner can actually reach),
+// each group most recently touched first.
+export function buildBuyerLists(rows: WishRow[]): BuyerList[] {
+  const byUser = new Map<string, BuyerList>();
+  for (const r of rows) {
+    let list = byUser.get(r.user_id);
+    if (!list) {
+      list = { key: r.user_id, email: r.email, anonymous: r.is_anonymous || !r.email, items: [], lastAt: r.created_at };
+      byUser.set(r.user_id, list);
+    }
+    list.items.push({ itemId: r.item_id, bid: r.bid_amount == null ? null : Number(r.bid_amount), addedAt: r.created_at });
+    if (r.created_at > list.lastAt) list.lastAt = r.created_at;
+  }
+  return [...byUser.values()].sort((a, b) => Number(a.anonymous) - Number(b.anonymous) || b.lastAt.localeCompare(a.lastAt));
+}

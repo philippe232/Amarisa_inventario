@@ -12,10 +12,11 @@ import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
 import type { ItemStatus } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import Pill from "@/components/Pill";
+import BuyerListPanel from "./buyer-list-panel";
 import CartPanel, { type LinePatch } from "./cart-panel";
 import ItemPanel, { type AddTarget } from "./item-panel";
 import ResumenView from "./resumen-view";
-import { OrderStatusBadge, type PaymentInput, type QueueItem } from "./shared";
+import { OrderStatusBadge, buildBuyerLists, listLabel, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
 
 type View = "articulos" | "carritos" | "resumen";
 type OrderPatch = Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method">>;
@@ -67,6 +68,10 @@ export function VentasView({
   // Every item_sales row: a cart line when order_id is set.
   const [lines, setLines] = useState<ItemSale[]>([]);
   const [payments, setPayments] = useState<OrderPayment[]>([]);
+  // Every buyer's own list (owner_wishlists, 0037), kept as raw rows.
+  const [wishRows, setWishRows] = useState<WishRow[]>([]);
+  const [selectedListKey, setSelectedListKey] = useState<string | null>(null);
+  const [showAnonymous, setShowAnonymous] = useState(false);
 
   const [view, setView] = useState<View>("articulos");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -89,7 +94,7 @@ export function VentasView({
 
     async function load() {
       setLoading(true);
-      const [itemsRes, ordersRes, linesRes, paymentsRes] = await Promise.all([
+      const [itemsRes, ordersRes, linesRes, paymentsRes, wishRes] = await Promise.all([
         supabase
           .from("items")
           .select("id, name, brand, model, area, quantity, ref_code, status, asking_price, item_photos(url)")
@@ -98,6 +103,7 @@ export function VentasView({
         supabase.from("sale_orders").select("*").order("created_at"),
         supabase.from("item_sales").select("*").order("sold_at"),
         supabase.from("sale_order_payments").select("*").order("paid_at"),
+        supabase.rpc("owner_wishlists"),
       ]);
       if (cancelled) return;
 
@@ -121,6 +127,9 @@ export function VentasView({
       setOrders((ordersRes.data ?? []) as SaleOrder[]);
       setLines(((linesRes.data ?? []) as ItemSale[]).map(normLine));
       setPayments(((paymentsRes.data ?? []) as OrderPayment[]).map(normPayment));
+      // The buyer lists are a bonus: if they can't be read the rest of
+      // the screen still works.
+      setWishRows(wishRes.error ? [] : ((wishRes.data ?? []) as WishRow[]));
       setLoading(false);
     }
     load();
@@ -160,6 +169,10 @@ export function VentasView({
     [orders, openOrders],
   );
 
+  const buyerLists = useMemo(() => buildBuyerLists(wishRows), [wishRows]);
+  const visibleLists = useMemo(() => buyerLists.filter((l) => showAnonymous || !l.anonymous), [buyerLists, showAnonymous]);
+  const anonymousCount = buyerLists.filter((l) => l.anonymous).length;
+
   const soldCount = items.filter((i) => i.status === "sold").length;
 
   // An item is "sold" once every unit is in a CLOSED order. Only moves
@@ -187,10 +200,10 @@ export function VentasView({
     }
   }
 
-  async function createOrder(name: string): Promise<SaleOrder | null> {
+  async function createOrder(name: string, buyerContact: string | null = null): Promise<SaleOrder | null> {
     const { data, error: err } = await supabase
       .from("sale_orders")
-      .insert({ name, payment_method: "efectivo", created_by: email })
+      .insert({ name, buyer_contact: buyerContact, payment_method: "efectivo", created_by: email })
       .select()
       .single();
     if (err || !data) {
@@ -314,6 +327,31 @@ export function VentasView({
     setPayments((prev) => prev.filter((p) => p.id !== paymentId));
   }
 
+  // A buyer's list becomes a real cart: their email as name and contact,
+  // one unit of each article that still has any, at their offer or the
+  // list price. From there it's an ordinary cart.
+  async function convertList(list: { key: string; email: string | null; items: { itemId: string; bid: number | null }[] }) {
+    const order = await createOrder(listLabel(list), list.email);
+    if (!order) return;
+    const rows = list.items.flatMap((entry) => {
+      const item = itemsById.get(entry.itemId);
+      if (!item || item.quantity - (reservedByItem.get(item.id) ?? 0) < 1) return [];
+      const price = entry.bid ?? item.asking_price ?? 0;
+      return [{ item_id: item.id, order_id: order.id, final_price: price, quantity: 1, line_total: round2(price), sold_by: email }];
+    });
+    if (rows.length > 0) {
+      const { data, error: err } = await supabase.from("item_sales").insert(rows).select();
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      setLines((prev) => [...prev, ...((data ?? []) as ItemSale[]).map(normLine)]);
+    }
+    setActiveOrderId(order.id);
+    setSelectedListKey(null);
+    setSelectedOrderId(order.id);
+  }
+
   async function handleNewCart() {
     const name = newCartName.trim();
     if (!name) return;
@@ -321,16 +359,19 @@ export function VentasView({
     if (!order) return;
     setNewCartName("");
     setActiveOrderId(order.id);
+    setSelectedListKey(null);
     setSelectedOrderId(order.id);
   }
 
   function openOrder(orderId: string) {
+    setSelectedListKey(null);
     setSelectedOrderId(orderId);
     setView("carritos");
   }
 
   const selectedItem = itemsById.get(selectedItemId ?? "") ?? null;
   const selectedOrder = ordersById.get(selectedOrderId ?? "") ?? null;
+  const selectedList = buyerLists.find((l) => l.key === selectedListKey) ?? null;
   const activeOrder = ordersById.get(activeOrderId ?? "") ?? null;
 
   if (roleLoading || role !== "owner") return <p className="p-4 text-sm text-ink-soft">Cargando...</p>;
@@ -374,7 +415,7 @@ export function VentasView({
         <ResumenView orders={orders} linesByOrder={linesByOrder} paymentsByOrder={paymentsByOrder} onOpenOrder={openOrder} />
       ) : view === "carritos" ? (
         <div className="md:grid md:grid-cols-[360px_1fr] md:items-start md:gap-4 md:px-3.5">
-          <div className={`${selectedOrderId ? "hidden md:block" : ""} ${listPane}`}>
+          <div className={`${selectedOrderId || selectedListKey ? "hidden md:block" : ""} ${listPane}`}>
             <div className="flex gap-2">
               <input
                 value={newCartName}
@@ -400,7 +441,10 @@ export function VentasView({
                 <button
                   key={order.id}
                   type="button"
-                  onClick={() => setSelectedOrderId(order.id)}
+                  onClick={() => {
+                    setSelectedListKey(null);
+                    setSelectedOrderId(order.id);
+                  }}
                   className={`flex w-full items-center gap-2.5 rounded-md border px-3 py-2.5 text-left ${
                     selectedOrderId === order.id ? "border-ink bg-page" : "border-line bg-card"
                   }`}
@@ -416,10 +460,59 @@ export function VentasView({
               );
             })}
             {sortedOrders.length === 0 && <p className="p-4 text-sm text-ink-soft">Todavía no hay carritos. Crea uno arriba o agrega un artículo desde «Por artículo».</p>}
+
+            {buyerLists.length > 0 && (
+              <div className="space-y-1.5 border-t border-line pt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold tracking-wide text-ink-soft uppercase">Listas de compradores</p>
+                  {anonymousCount > 0 && (
+                    <label className="flex items-center gap-1.5 text-xs text-ink-soft">
+                      <input type="checkbox" checked={showAnonymous} onChange={(e) => setShowAnonymous(e.target.checked)} className="h-3.5 w-3.5" />
+                      Anónimos ({anonymousCount})
+                    </label>
+                  )}
+                </div>
+                {visibleLists.map((list) => (
+                  <button
+                    key={list.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedOrderId(null);
+                      setSelectedListKey(list.key);
+                    }}
+                    className={`flex w-full items-center gap-2.5 rounded-md border px-3 py-2.5 text-left ${
+                      selectedListKey === list.key ? "border-ink bg-page" : "border-line bg-card"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{listLabel(list)}</p>
+                      <p className="truncate text-xs text-ink-soft">
+                        {list.items.length} {list.items.length === 1 ? "artículo" : "artículos"} · {formatDate(list.lastAt)}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-neutral/30 bg-neutral/10 px-2.5 py-0.5 text-xs font-bold text-neutral">
+                      Lista
+                    </span>
+                  </button>
+                ))}
+                {visibleLists.length === 0 && <p className="text-xs text-ink-soft">Ningún comprador ha vinculado su email todavía.</p>}
+              </div>
+            )}
           </div>
 
-          <div className={`${selectedOrderId ? "" : "hidden md:block"} ${detailPane}`}>
-            {selectedOrder ? (
+          <div className={`${selectedOrderId || selectedListKey ? "" : "hidden md:block"} ${detailPane}`}>
+            {selectedList ? (
+              <BuyerListPanel
+                key={selectedList.key}
+                list={selectedList}
+                itemsById={itemsById}
+                reservedByItem={reservedByItem}
+                existingOrder={selectedList.email ? (openOrders.find((o) => o.buyer_contact === selectedList.email) ?? null) : null}
+                onBack={() => setSelectedListKey(null)}
+                onConvert={() => convertList(selectedList)}
+                onOpenOrder={openOrder}
+              />
+            ) : selectedOrder ? (
               <CartPanel
                 key={selectedOrder.id}
                 order={selectedOrder}
