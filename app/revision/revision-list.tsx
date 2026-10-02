@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown, Flag, ImageOff } from "lucide-react";
@@ -10,6 +10,7 @@ import { formatCurrencyWhole } from "@/lib/currency";
 import { normalizeSearch } from "@/lib/normalize-search";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
+import PhotoLightbox from "@/components/PhotoLightbox";
 import { CONDITION_OPTIONS, CONDITION_LABELS } from "@/lib/condition";
 import { PRIORITY_OPTIONS, PRIORITY_LABELS } from "@/lib/priority";
 import { REVIEW_STATUS_OPTIONS, REVIEW_STATUS_LABELS } from "@/lib/review-status";
@@ -48,7 +49,7 @@ type SortDir = "asc" | "desc";
 const AREA_ORDER = ["Cocina", "Piso", "Barra", "Panadería"];
 
 type Row = Item & {
-  photoUrl: string | null;
+  photoUrls: string[];
   photoCount: number;
   linkCount: number;
   // From the active item_purchase_matches row (db/migrations/0023,
@@ -316,7 +317,7 @@ type ColumnDef = {
   // Fixed px width for columns that hold something tiny (a count) —
   // everything else sizes to its content.
   width?: number;
-  render: (item: Row, writeField: WriteFieldFn, pickerOptions: PickerOptions) => React.ReactNode;
+  render: (item: Row, writeField: WriteFieldFn, pickerOptions: PickerOptions, openPhotos: (item: Row) => void) => React.ReactNode;
   sortValue: (item: Row) => SortValue;
 };
 
@@ -706,11 +707,18 @@ const COLUMNS: ColumnDef[] = [
     key: "photos",
     group: "fotos",
     label: "Fotos",
-    render: (i) => (
+    render: (i, _writeField, _pickerOptions, openPhotos) => (
       <div className="flex items-center gap-1.5">
-        {i.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={i.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded border border-line object-cover" />
+        {i.photoUrls.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => openPhotos(i)}
+            aria-label={`Ver fotos de ${i.name}`}
+            className="shrink-0 cursor-zoom-in rounded"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={i.photoUrls[0]} alt="" className="h-8 w-8 rounded border border-line object-cover" />
+          </button>
         ) : (
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-page text-ink-faint">
             <ImageOff className="h-3.5 w-3.5" aria-hidden="true" />
@@ -813,6 +821,9 @@ export default function RevisionList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; name: string } | null>(null);
+  const openPhotos = useCallback((item: Row) => setLightbox({ photos: item.photoUrls, name: item.name }), []);
+  const closeLightbox = useCallback(() => setLightbox(null), []);
   const [search, setSearch] = useState("");
   // Multi-select per facet (OR within one, AND across facets) — same
   // model as items-list.tsx's own área/tipo filter.
@@ -864,11 +875,11 @@ export default function RevisionList() {
         return;
       }
 
-      const photoUrls = new Map<string, string>();
-      const photoCounts = new Map<string, number>();
+      const photoUrls = new Map<string, string[]>();
       for (const row of photosRes.data ?? []) {
-        if (!photoUrls.has(row.item_id)) photoUrls.set(row.item_id, row.url);
-        photoCounts.set(row.item_id, (photoCounts.get(row.item_id) ?? 0) + 1);
+        const list = photoUrls.get(row.item_id);
+        if (list) list.push(row.url);
+        else photoUrls.set(row.item_id, [row.url]);
       }
       const linkCounts = new Map<string, number>();
       for (const row of linksRes.data ?? []) {
@@ -881,8 +892,8 @@ export default function RevisionList() {
 
       const rows: Row[] = (itemsRes.data as Item[]).map((item) => ({
         ...item,
-        photoUrl: photoUrls.get(item.id) ?? null,
-        photoCount: photoCounts.get(item.id) ?? 0,
+        photoUrls: photoUrls.get(item.id) ?? [],
+        photoCount: photoUrls.get(item.id)?.length ?? 0,
         linkCount: linkCounts.get(item.id) ?? 0,
         matchStatus: matchStatuses.get(item.id) ?? null,
       }));
@@ -1176,6 +1187,8 @@ export default function RevisionList() {
           <p className="p-4 text-sm text-red-600">Error: {error}</p>
         ) : (
           <>
+            {lightbox && <PhotoLightbox photos={lightbox.photos} alt={lightbox.name} onClose={closeLightbox} />}
+
             {saveError && (
               <p className="mb-3 rounded-md border border-negative/30 bg-negative/10 px-3 py-2 text-sm text-negative">
                 No se pudo guardar: {saveError}
@@ -1359,7 +1372,7 @@ export default function RevisionList() {
                                       className="max-w-[220px] px-2.5 py-2 align-top text-ink"
                                       style={c.width != null ? { width: c.width, minWidth: c.width, maxWidth: c.width } : undefined}
                                     >
-                                      {c.render(item, writeField, pickerOptions)}
+                                      {c.render(item, writeField, pickerOptions, openPhotos)}
                                     </td>
                                   ))}
                                   <td
