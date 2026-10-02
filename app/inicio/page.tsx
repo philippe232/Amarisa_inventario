@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { BadgePercent, Filter, Heart } from "lucide-react";
 
-// Welcome page. The root route (/) still redirects to the catalog on
-// purpose — that's where buyers land — so this lives at its own path and
-// the drawer's "Inicio" points here.
+// Welcome page — where the site opens: the root route (/) redirects here,
+// and so does the drawer's "Inicio".
 const TIPS = [
   {
     icon: Filter,

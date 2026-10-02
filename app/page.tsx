@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-// The real app starts at /items — nothing was ever built at the root
-// route, so it was still showing the default create-next-app template.
+// The site opens on the welcome page; the catalog is one tap away from
+// there (and in the drawer).
 export default function Home() {
-  redirect("/items");
+  redirect("/inicio");
 }
