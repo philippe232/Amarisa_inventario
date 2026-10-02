@@ -53,7 +53,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         )}
 
         <div className="min-w-0 px-1 text-center">
-          <p className="truncate text-base leading-tight font-bold text-ink">{config.title}</p>
+          <h1 className="truncate text-base leading-tight font-bold text-ink">{config.title}</h1>
           {config.subtitle && <p className="truncate font-mono text-[11px] leading-tight text-ink-faint">{config.subtitle}</p>}
         </div>
 

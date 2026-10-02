@@ -183,9 +183,20 @@ export default function ItemDetail({ id }: { id: string }) {
     <div className="pb-8">
       {/* 1. Header */}
       <PhotoCarousel photos={photos} alt={displayName} />
+      {/* The name and ref# live in the top bar (useTopBar above), so the
+          body doesn't repeat them. */}
       <div className="px-3.5 pt-3">
         <div className="flex items-start justify-between gap-2">
-          <h1 className="text-xl font-bold text-ink">{displayName}</h1>
+          {/* Cantidad disponible + Estado — Revisión/Prioridad are
+              Editor/Owner-only: items_public already nulls them out for
+              anyone else, so the null check below is what actually hides
+              them. */}
+          <div className="flex flex-wrap items-center gap-2 pt-1.5">
+            {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {availableUnits}</span>}
+            <StatusBadge status={item.status} />
+            {item.review_status && <ReviewStatusBadge status={item.review_status} />}
+            {item.priority && <PriorityBadge priority={item.priority} />}
+          </div>
           {role && (
             <Link
               href={`/items/${id}/editar`}
@@ -195,21 +206,6 @@ export default function ItemDetail({ id }: { id: string }) {
               Editar
             </Link>
           )}
-        </div>
-        {/* Editor/Owner-only for now (0019) — items_public nulls this out
-            for anyone else, same as review_status/priority below. Could
-            become public once there's an actual buyer-facing pass. */}
-        {item.ref_code && <p className="mt-0.5 font-mono text-xs text-ink-faint">Ref. {item.ref_code}</p>}
-        {/* Cantidad disponible + Estado — same Encabezado grouping/order
-            (Nombre, Ref., Cantidad disponible, Estado, Revisión, Prioridad)
-            as the edit form. Revisión/Prioridad are Editor/Owner-only —
-            items_public already nulls them out for anyone else, so the
-            null check below is what actually hides them. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {item.quantity}</span>}
-          <StatusBadge status={item.status} />
-          {item.review_status && <ReviewStatusBadge status={item.review_status} />}
-          {item.priority && <PriorityBadge priority={item.priority} />}
         </div>
         {/* Same masking as the badges above — internal_notes is never
             populated for a non-admin session. */}
