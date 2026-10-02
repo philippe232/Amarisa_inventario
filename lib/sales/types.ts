@@ -1,12 +1,15 @@
-// Mirrors db/migrations/0029_item_sales.sql and 0030's factura/SPEI
-// rework — kept by hand, same convention as lib/types.ts for items.
+// Mirrors db/migrations/0029_item_sales.sql, 0030's factura/SPEI
+// rework and 0032's quantity — kept by hand, same convention as lib/types.ts for items.
 
 export type PaymentMethod = "efectivo" | "spei" | "otro";
 
 export type ItemSale = {
   id: string;
   item_id: string;
+  // Price per unit; the amounts owed below are already multiplied by
+  // quantity (db/migrations/0032).
   final_price: number;
+  quantity: number;
   // Whether the buyer requested a factura — the real trigger for IVA,
   // not an abstract "was it already included" toggle. iva_amount is
   // only ever non-null when this is true (16% of final_price);

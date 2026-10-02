@@ -28,8 +28,12 @@ function formatDate(d: string | null): string {
 // short of the full total is "reserved", paid in full is "sold". One
 // computation, always run right after writing a sale or a payment, so
 // the queue's status badges never drift from what the payments actually
-// say.
-function computeItemStatus(totalOwed: number, totalPaid: number): ItemStatus {
+// say. A sale covering only PART of a multi-unit item never moves the
+// item off for_sale — units are still available, and the item's single
+// status can't say "3 of 10 sold" — so only a sale of every unit gets
+// the reserved/sold treatment.
+function computeItemStatus(totalOwed: number, totalPaid: number, soldQty: number, itemQty: number): ItemStatus {
+  if (soldQty < itemQty) return "for_sale";
   return totalOwed > 0 && totalPaid >= totalOwed ? "sold" : "reserved";
 }
 
@@ -110,7 +114,10 @@ export default function VentasScreen() {
   const soldCount = items.filter((i) => i.status === "sold").length;
 
   async function syncItemStatus(itemId: string, sale: ItemSale | undefined, payments: ItemSalePayment[]) {
-    const newStatus: ItemStatus = sale ? computeItemStatus(sale.total_with_iva, payments.reduce((s, p) => s + p.amount, 0)) : "for_sale";
+    const itemQty = items.find((i) => i.id === itemId)?.quantity ?? 1;
+    const newStatus: ItemStatus = sale
+      ? computeItemStatus(sale.total_with_iva, payments.reduce((s, p) => s + p.amount, 0), sale.quantity, itemQty)
+      : "for_sale";
     const { error: err } = await supabase.from("items").update({ status: newStatus }).eq("id", itemId);
     if (err) {
       setError(err.message);
@@ -119,7 +126,7 @@ export default function VentasScreen() {
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, status: newStatus } : i)));
   }
 
-  async function saveSale(itemId: string, patch: Pick<ItemSale, "final_price" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) {
+  async function saveSale(itemId: string, patch: Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) {
     const existing = salesByItem.get(itemId);
     const { data, error: err } = await supabase
       .from("item_sales")
@@ -364,6 +371,7 @@ function ResumenView({
               <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
               <p className="truncate text-xs text-ink-soft">
                 {sale.buyer_name ?? "Sin comprador"} · {formatDate(sale.sold_at)}
+                {sale.quantity > 1 && <> · {sale.quantity} pzas</>}
               </p>
             </div>
             <div className="shrink-0 text-right">
@@ -392,12 +400,13 @@ function ItemSalePanel({
   sale: ItemSale | null;
   payments: ItemSalePayment[];
   onBack: () => void;
-  onSaveSale: (patch: Pick<ItemSale, "final_price" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) => Promise<void>;
+  onSaveSale: (patch: Pick<ItemSale, "final_price" | "quantity" | "requires_invoice" | "buyer_name" | "buyer_contact" | "notes">) => Promise<void>;
   onDeleteSale: () => Promise<void>;
   onAddPayment: (p: { amount: number; method: PaymentMethod; paid_at: string; note: string | null }) => Promise<void>;
   onDeletePayment: (paymentId: string) => Promise<void>;
 }) {
   const [finalPrice, setFinalPrice] = useState(sale ? String(sale.final_price) : "");
+  const [quantity, setQuantity] = useState(sale ? String(sale.quantity) : "1");
   const [requiresInvoice, setRequiresInvoice] = useState(sale?.requires_invoice ?? false);
   const [buyerName, setBuyerName] = useState(sale?.buyer_name ?? "");
   const [buyerContact, setBuyerContact] = useState(sale?.buyer_contact ?? "");
@@ -410,9 +419,19 @@ function ItemSalePanel({
   const [paymentNote, setPaymentNote] = useState("");
   const [addingPayment, setAddingPayment] = useState(false);
 
+  // Only multi-unit items get a quantity field; a single piece is always
+  // quantity 1. The price field is per piece, so everything owed scales
+  // with the units sold.
+  const maxQty = item.quantity;
+  const multi = maxQty > 1;
+  const qtyNumber = multi ? Math.floor(Number(quantity)) || 0 : 1;
+  const qtyValid = qtyNumber >= 1 && qtyNumber <= maxQty;
+  const units = Math.min(Math.max(qtyNumber, 1), maxQty);
+
   const priceNumber = Number(finalPrice) || 0;
-  const previewIva = requiresInvoice ? Math.round(priceNumber * 0.16 * 100) / 100 : null;
-  const previewTotal = requiresInvoice ? Math.round(priceNumber * 1.16 * 100) / 100 : priceNumber;
+  const subtotal = Math.round(priceNumber * units * 100) / 100;
+  const previewIva = requiresInvoice ? Math.round(subtotal * 0.16 * 100) / 100 : null;
+  const previewTotal = requiresInvoice ? Math.round(subtotal * 1.16 * 100) / 100 : subtotal;
   const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
   const totalOwed = sale?.total_with_iva ?? previewTotal;
   const saldoPendiente = Math.max(0, totalOwed - totalPaid);
@@ -449,9 +468,24 @@ function ItemSalePanel({
             {askingPrice != null ? formatCurrency(askingPrice) : "Sin precio de lista"}
           </p>
         </label>
+        {multi && (
+          <label className="block">
+            <span className="text-xs font-medium text-ink-soft">Cantidad (de {maxQty})</span>
+            <input
+              type="number"
+              min={1}
+              max={maxQty}
+              step={1}
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-line-strong px-2 text-sm text-ink"
+            />
+            {!qtyValid && <span className="mt-1 block text-xs text-negative">Debe ser entre 1 y {maxQty}.</span>}
+          </label>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-xs font-medium text-ink-soft">Precio final</span>
+            <span className="text-xs font-medium text-ink-soft">{multi ? "Precio final (por pieza)" : "Precio final"}</span>
             <input
               type="number"
               value={finalPrice}
@@ -460,12 +494,21 @@ function ItemSalePanel({
             />
           </label>
           <div className="flex flex-col justify-end pb-2.5">
-            <span className="text-xs font-medium text-ink-soft">Descuento</span>
+            <span className="text-xs font-medium text-ink-soft">{multi ? "Descuento (por pieza)" : "Descuento"}</span>
             <p className={`text-sm font-medium ${discountAmount != null && discountAmount > 0 ? "text-positive" : "text-ink"}`}>
               {discountAmount != null ? `${formatCurrency(discountAmount)} (${discountPct!.toFixed(1)}%)` : "—"}
             </p>
           </div>
         </div>
+
+        {multi && (
+          <div className="rounded-md border border-line bg-page p-2.5 text-sm text-ink">
+            <p>
+              {units} × {formatCurrency(priceNumber)} = <span className="font-semibold">{formatCurrency(subtotal)}</span>
+            </p>
+            {units < maxQty && <p className="mt-0.5 text-xs text-ink-soft">Quedan {maxQty - units} en venta.</p>}
+          </div>
+        )}
 
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={requiresInvoice} onChange={(e) => setRequiresInvoice(e.target.checked)} className="h-4 w-4" />
@@ -514,11 +557,12 @@ function ItemSalePanel({
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={saving || !finalPrice}
+            disabled={saving || !finalPrice || !qtyValid}
             onClick={async () => {
               setSaving(true);
               await onSaveSale({
                 final_price: priceNumber,
+                quantity: qtyNumber,
                 requires_invoice: requiresInvoice,
                 buyer_name: buyerName.trim() || null,
                 buyer_contact: buyerContact.trim() || null,
