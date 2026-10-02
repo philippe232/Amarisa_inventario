@@ -1,17 +1,21 @@
 "use client";
 
 import { ArrowLeft, Menu } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTopBarConfig } from "@/components/TopBarContext";
+import { titleForPath } from "@/lib/nav";
 
 // Ported from reference/cereza/app/(shell)/top-bar.tsx's layout (h-14
 // header, hamburger button left, balancing spacer right so the title
-// stays centered). Shows the "Amarisa" brand unless a page asks for
-// something else via useTopBar — an article's page puts its name and ref#
-// here, with a back button on the left and the menu on the right.
+// stays centered). Shows the name of the drawer screen you're on (Ventas,
+// Catálogo...), the "Amarisa" brand outside the drawer's screens, and
+// whatever a page asks for via useTopBar — an article's page puts its
+// name and ref# here, with a back button on the left and the menu on the
+// right.
 export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter();
   const config = useTopBarConfig();
+  const screenTitle = titleForPath(usePathname());
 
   const menuButton = (
     <button
@@ -60,7 +64,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-card px-3">
       {menuButton}
 
-      <h1 className="text-base font-bold text-ink">Amarisa</h1>
+      <h1 className="text-base font-bold text-ink">{screenTitle ?? "Amarisa"}</h1>
 
       <div className="h-12 w-12" aria-hidden="true" />
     </header>

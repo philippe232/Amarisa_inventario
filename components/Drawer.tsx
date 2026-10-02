@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Home, Heart, LogOut, LogIn, ClipboardList, Receipt, DollarSign, LayoutGrid } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
+import { NAV_TITLES } from "@/lib/nav";
 
 // Ported from reference/cereza/app/(shell)/drawer.tsx's overlay/panel
 // shape (fixed inset-0 flex, w-72 panel + flex-1 backdrop button, no
@@ -12,9 +13,9 @@ import { useSessionInfo } from "@/lib/auth";
 // sections/badges to account for.
 // Inicio is a placeholder for a welcome page still to be designed; the
 // catalog itself is Catálogo.
-const INICIO = { href: "/inicio", label: "Inicio", icon: Home };
-const CATALOGO = { href: "/items", label: "Catálogo", icon: LayoutGrid };
-const VIEWER_NAV_ITEMS = [INICIO, CATALOGO, { href: "/wishlist", label: "Mi lista", icon: Heart }];
+const INICIO = { href: "/inicio", label: NAV_TITLES.inicio, icon: Home };
+const CATALOGO = { href: "/items", label: NAV_TITLES.catalogo, icon: LayoutGrid };
+const VIEWER_NAV_ITEMS = [INICIO, CATALOGO, { href: "/wishlist", label: NAV_TITLES.wishlist, icon: Heart }];
 // Editor's surface: list/detail/edit, Revisión de Inventario, and
 // Precios de Compra. Owner gets all of that plus Ventas (0029) —
 // exclusive to Owner is the first real Editor/Owner permissions split
@@ -24,10 +25,10 @@ const VIEWER_NAV_ITEMS = [INICIO, CATALOGO, { href: "/wishlist", label: "Mi list
 const ADMIN_NAV_ITEMS = [
   INICIO,
   CATALOGO,
-  { href: "/revision", label: "Revisión de Inventario", icon: ClipboardList },
-  { href: "/match-compras", label: "Precios de Compra", icon: Receipt },
+  { href: "/revision", label: NAV_TITLES.revision, icon: ClipboardList },
+  { href: "/match-compras", label: NAV_TITLES.precios, icon: Receipt },
 ];
-const OWNER_NAV_ITEMS = [...ADMIN_NAV_ITEMS, { href: "/ventas", label: "Ventas", icon: DollarSign }];
+const OWNER_NAV_ITEMS = [...ADMIN_NAV_ITEMS, { href: "/ventas", label: NAV_TITLES.ventas, icon: DollarSign }];
 
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
