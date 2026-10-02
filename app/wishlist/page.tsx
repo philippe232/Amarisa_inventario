@@ -9,8 +9,7 @@ export const dynamic = "force-dynamic";
 export default function WishlistPage() {
   return (
     <div className="min-h-screen bg-white">
-      <div className="flex items-center justify-between px-3.5 pt-4 pb-3">
-        <h1 className="text-lg font-bold text-ink">Mi lista</h1>
+      <div className="flex items-center justify-end px-3.5 pt-3 pb-3">
         <Link href="/items" className="text-sm text-ink-soft">
           Seguir viendo artículos →
         </Link>

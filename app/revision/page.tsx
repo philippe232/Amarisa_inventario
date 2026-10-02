@@ -8,7 +8,6 @@ export const dynamic = "force-dynamic";
 export default function RevisionPage() {
   return (
     <div className="min-h-screen bg-white">
-      <h1 className="px-3.5 pt-4 text-lg font-bold text-ink">Revisión de Inventario</h1>
       <RevisionList />
     </div>
   );
