@@ -3,6 +3,7 @@
 import { useState } from "react";
 import TopBar from "./TopBar";
 import Drawer from "./Drawer";
+import { TopBarProvider } from "./TopBarContext";
 
 // Mounted once in app/layout.tsx so the hamburger/drawer are present on
 // every screen, same shape as reference/cereza/app/(shell)/shell.tsx
@@ -11,17 +12,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <TopBar onMenuClick={() => setDrawerOpen(true)} />
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
-      {/* bg-white here, not just per-page — found live: item-detail.tsx
+    <TopBarProvider>
+      <div className="flex min-h-dvh flex-col">
+        <TopBar onMenuClick={() => setDrawerOpen(true)} />
+        <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+        {/* bg-white here, not just per-page — found live: item-detail.tsx
           and the edit form had no background of their own, so they fell
           through to body's --background variable, which flips dark
           under prefers-color-scheme even though nothing in this app
           implements real dark-mode theming. One fix here covers every
           current and future page, rather than each page remembering its
           own bg-white. */}
-      <main className="flex flex-1 flex-col bg-white">{children}</main>
-    </div>
+        <main className="flex flex-1 flex-col bg-white">{children}</main>
+      </div>
+    </TopBarProvider>
   );
 }

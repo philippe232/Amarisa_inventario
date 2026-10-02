@@ -9,6 +9,7 @@ import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
+import { useTopBar } from "@/components/TopBarContext";
 import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
 import PriorityBadge from "@/components/PriorityBadge";
@@ -34,6 +35,9 @@ export default function ItemDetail({ id }: { id: string }) {
   const { role } = useSessionInfo();
 
   const [item, setItem] = useState<Item | null>(null);
+  // The top bar shows this article's name and ref# (with a back button)
+  // instead of the brand while the page is open.
+  useTopBar({ title: item ? getDisplayName(item) : "Artículo", subtitle: item?.ref_code ?? null, back: true });
   const [photos, setPhotos] = useState<ItemPhoto[]>([]);
   const [links, setLinks] = useState<ItemLink[]>([]);
   const [loading, setLoading] = useState(true);
