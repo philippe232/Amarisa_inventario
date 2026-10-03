@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileDown, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import { lineTotal, orderTotals, round2, totalPaid as sumPaid, type OrderDiscount } from "@/lib/sales/orders";
+import { downloadOrderPdf } from "@/lib/sales/pdf";
 import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
 import MoneyInput from "@/components/MoneyInput";
@@ -62,6 +63,8 @@ export default function CartPanel({
   const [notes, setNotes] = useState(order.notes ?? "");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [closing, setClosing] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ photos: string[]; name: string } | null>(null);
   const closeLightbox = useCallback(() => setLightbox(null), []);
   // The discount being typed; saved when the field loses focus (or the %/$
@@ -126,6 +129,27 @@ export default function CartPanel({
     void onUpdateOrder(next);
   }
 
+  // Downloads this cart as a PDF — what's saved (a field still being
+  // typed in is saved when the button takes focus).
+  async function handlePdf() {
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      await downloadOrderPdf(
+        order,
+        lines.map((l) => {
+          const item = itemsById.get(l.item_id);
+          return { name: item ? getDisplayName(item) : "Artículo", ref: item?.ref_code ?? null, qty: l.quantity, unit: l.final_price, total: lineTotal(l) };
+        }),
+        payments,
+      );
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "No se pudo generar el PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   const effectiveTotal = (line: ItemSale) => (drafts[line.id] ? Number(drafts[line.id].total) || 0 : lineTotal(line));
   const discountDraft: OrderDiscount = Number(discText) > 0 ? { type: discType, value: Number(discText) } : null;
   const { subtotal, discount, iva, total } = orderTotals(lines.map(effectiveTotal), order.requires_invoice, discountDraft);
@@ -143,8 +167,21 @@ export default function CartPanel({
       <div className="space-y-3 rounded-md border border-line bg-card p-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-ink">Carrito</p>
-          <OrderStatusBadge status={order.status} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePdf}
+              disabled={pdfBusy || lines.length === 0}
+              title="Descargar este carrito como PDF"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-card px-2.5 text-xs font-semibold text-ink disabled:opacity-50"
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+              {pdfBusy ? "Generando..." : "PDF"}
+            </button>
+            <OrderStatusBadge status={order.status} />
+          </div>
         </div>
+        {pdfError && <p className="text-xs text-negative">{pdfError}</p>}
         <label className="block">
           <span className="text-xs font-medium text-ink-soft">Nombre (comprador)</span>
           <input
