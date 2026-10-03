@@ -13,13 +13,35 @@ export function lineTotal(line: Pick<ItemSale, "final_price" | "quantity" | "lin
   return line.line_total ?? round2(line.final_price * line.quantity);
 }
 
-// An order's money: the lines' totals, plus IVA on top when the buyer
-// needs a factura. IVA is worked out once on the order's subtotal (that's
-// how the factura is issued), not summed from per-line roundings.
-export function orderTotals(lineTotals: number[], requiresInvoice: boolean): { subtotal: number; iva: number; total: number } {
+// A discount on an order's total: a percentage, or a fixed amount.
+export type OrderDiscount = { type: "percent" | "amount"; value: number } | null;
+
+export function orderDiscountOf(order: Pick<SaleOrder, "discount_type" | "discount_value">): OrderDiscount {
+  return order.discount_type && order.discount_value != null ? { type: order.discount_type, value: order.discount_value } : null;
+}
+
+// How much comes off the subtotal — never negative, never more than the
+// subtotal itself (a percentage over 100 counts as 100).
+export function discountAmount(subtotal: number, discount: OrderDiscount): number {
+  if (!discount || !(discount.value > 0)) return 0;
+  const raw = discount.type === "percent" ? round2((subtotal * Math.min(discount.value, 100)) / 100) : discount.value;
+  return round2(Math.min(Math.max(raw, 0), subtotal));
+}
+
+// An order's money: the lines' totals, less any discount, plus IVA on top
+// when the buyer needs a factura. IVA is worked out once, on the
+// discounted subtotal (what's actually invoiced), not summed from
+// per-line roundings.
+export function orderTotals(
+  lineTotals: number[],
+  requiresInvoice: boolean,
+  discount: OrderDiscount = null,
+): { subtotal: number; discount: number; base: number; iva: number; total: number } {
   const subtotal = round2(lineTotals.reduce((s, t) => s + t, 0));
-  const iva = requiresInvoice ? round2(subtotal * IVA_RATE) : 0;
-  return { subtotal, iva, total: round2(subtotal + iva) };
+  const off = discountAmount(subtotal, discount);
+  const base = round2(subtotal - off);
+  const iva = requiresInvoice ? round2(base * IVA_RATE) : 0;
+  return { subtotal, discount: off, base, iva, total: round2(base + iva) };
 }
 
 export function totalPaid(payments: Pick<OrderPayment, "amount">[]): number {

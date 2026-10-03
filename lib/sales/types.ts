@@ -49,6 +49,10 @@ export type SaleOrder = {
   status: OrderStatus;
   requires_invoice: boolean;
   payment_method: FormaDePago | null;
+  // Discount on the order's total (0041): a percentage or a fixed amount
+  // off the subtotal; both null when there isn't one.
+  discount_type: "percent" | "amount" | null;
+  discount_value: number | null;
   created_by: string | null;
   created_at: string;
   closed_at: string | null;

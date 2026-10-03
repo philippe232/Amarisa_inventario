@@ -1,7 +1,7 @@
 "use client";
 
 import { formatCurrency } from "@/lib/currency";
-import { lineTotal, orderTotals, round2, totalPaid } from "@/lib/sales/orders";
+import { lineTotal, orderDiscountOf, orderTotals, round2, totalPaid } from "@/lib/sales/orders";
 import { FORMA_DE_PAGO_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
 import { formatDate } from "./shared";
@@ -27,7 +27,7 @@ export default function ResumenView({
     .map((order) => {
       const lines = linesByOrder.get(order.id) ?? [];
       const payments = paymentsByOrder.get(order.id) ?? [];
-      const { total } = orderTotals(lines.map(lineTotal), order.requires_invoice);
+      const { total } = orderTotals(lines.map(lineTotal), order.requires_invoice, orderDiscountOf(order));
       const paid = totalPaid(payments);
       return {
         order,

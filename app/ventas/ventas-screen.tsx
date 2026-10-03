@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
-import { itemStatusFor, lineTotal, orderTotals, reservedQty, round2, soldQty } from "@/lib/sales/orders";
+import { itemStatusFor, lineTotal, orderDiscountOf, orderTotals, reservedQty, round2, soldQty } from "@/lib/sales/orders";
 import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
 import type { ItemStatus } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
@@ -19,7 +19,7 @@ import ResumenView from "./resumen-view";
 import { OrderStatusBadge, buildBuyerLists, listLabel, listTotals, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
 
 type View = "articulos" | "carritos" | "resumen";
-type OrderPatch = Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method">>;
+type OrderPatch = Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method" | "discount_type" | "discount_value">>;
 
 function groupBy<T>(rows: T[], key: (row: T) => string | null): Map<string, T[]> {
   const map = new Map<string, T[]>();
@@ -38,6 +38,7 @@ const normLine = (l: ItemSale): ItemSale => ({
   final_price: Number(l.final_price),
   line_total: l.line_total == null ? null : Number(l.line_total),
 });
+const normOrder = (o: SaleOrder): SaleOrder => ({ ...o, discount_value: o.discount_value == null ? null : Number(o.discount_value) });
 const normPayment = (p: OrderPayment): OrderPayment => ({ ...p, amount: Number(p.amount) });
 
 export default function VentasScreen() {
@@ -124,7 +125,7 @@ export function VentasView({
           } as QueueItem;
         }),
       );
-      setOrders((ordersRes.data ?? []) as SaleOrder[]);
+      setOrders(((ordersRes.data ?? []) as SaleOrder[]).map(normOrder));
       setLines(((linesRes.data ?? []) as ItemSale[]).map(normLine));
       setPayments(((paymentsRes.data ?? []) as OrderPayment[]).map(normPayment));
       // The buyer lists are a bonus: if they can't be read the rest of
@@ -225,7 +226,7 @@ export function VentasView({
       setError(err?.message ?? "No se pudo crear el carrito");
       return null;
     }
-    const order = data as SaleOrder;
+    const order = normOrder(data as SaleOrder);
     setOrders((prev) => [...prev, order]);
     return order;
   }
@@ -452,7 +453,7 @@ export function VentasView({
             </div>
             {sortedOrders.map((order) => {
               const ols = linesByOrder.get(order.id) ?? [];
-              const { total } = orderTotals(ols.map(lineTotal), order.requires_invoice);
+              const { total } = orderTotals(ols.map(lineTotal), order.requires_invoice, orderDiscountOf(order));
               const pieces = ols.reduce((n, l) => n + l.quantity, 0);
               return (
                 <button

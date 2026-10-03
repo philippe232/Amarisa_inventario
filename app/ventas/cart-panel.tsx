@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
-import { lineTotal, orderTotals, round2, totalPaid as sumPaid } from "@/lib/sales/orders";
+import { lineTotal, orderTotals, round2, totalPaid as sumPaid, type OrderDiscount } from "@/lib/sales/orders";
 import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
 import { OrderStatusBadge, formatDate, type PaymentInput, type QueueItem } from "./shared";
@@ -42,7 +42,9 @@ export default function CartPanel({
   reservedByItem: Map<string, number>;
   payments: OrderPayment[];
   onBack: () => void;
-  onUpdateOrder: (patch: Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method">>) => Promise<void>;
+  onUpdateOrder: (
+    patch: Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method" | "discount_type" | "discount_value">>,
+  ) => Promise<void>;
   onUpdateLine: (lineId: string, patch: LinePatch) => Promise<void>;
   onRemoveLine: (lineId: string) => Promise<void>;
   onAddArticles: () => void;
@@ -58,6 +60,10 @@ export default function CartPanel({
   const [notes, setNotes] = useState(order.notes ?? "");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [closing, setClosing] = useState(false);
+  // The discount being typed; saved when the field loses focus (or the %/$
+  // switch is flipped), but it drives the totals as soon as it changes.
+  const [discType, setDiscType] = useState<"percent" | "amount">(order.discount_type ?? "percent");
+  const [discText, setDiscText] = useState(order.discount_value != null ? String(order.discount_value) : "");
 
   const [payAmount, setPayAmount] = useState("");
   // null = follow the order's forma de pago until a payment says otherwise
@@ -106,8 +112,19 @@ export default function CartPanel({
     await onUpdateLine(line.id, { quantity: qty, final_price: unit, line_total: total });
   }
 
+  // A percentage tops out at 100; empty or zero means no discount.
+  function commitDiscount(type: "percent" | "amount", text: string) {
+    const typed = Number(text);
+    const value = typed > 0 ? round2(type === "percent" ? Math.min(typed, 100) : typed) : null;
+    setDiscText(value == null ? "" : String(value));
+    const next = value == null ? { discount_type: null, discount_value: null } : { discount_type: type, discount_value: value };
+    if (next.discount_type === order.discount_type && next.discount_value === order.discount_value) return;
+    void onUpdateOrder(next);
+  }
+
   const effectiveTotal = (line: ItemSale) => (drafts[line.id] ? Number(drafts[line.id].total) || 0 : lineTotal(line));
-  const { subtotal, iva, total } = orderTotals(lines.map(effectiveTotal), order.requires_invoice);
+  const discountDraft: OrderDiscount = Number(discText) > 0 ? { type: discType, value: Number(discText) } : null;
+  const { subtotal, discount, iva, total } = orderTotals(lines.map(effectiveTotal), order.requires_invoice, discountDraft);
   const paid = sumPaid(payments);
   const saldo = Math.max(0, round2(total - paid));
   const pieces = lines.reduce((n, l) => n + (Number(drafts[l.id]?.qty) || l.quantity), 0);
@@ -278,6 +295,45 @@ export default function CartPanel({
           </select>
         </label>
 
+        <div>
+          <span className="text-xs font-medium text-ink-soft">Descuento</span>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="flex shrink-0 overflow-hidden rounded-md border border-line-strong" role="group" aria-label="Tipo de descuento">
+              {(["percent", "amount"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  disabled={closed}
+                  aria-pressed={discType === type}
+                  onClick={() => {
+                    setDiscType(type);
+                    commitDiscount(type, discText);
+                  }}
+                  className={`h-9 w-10 text-sm font-semibold disabled:opacity-60 ${discType === type ? "bg-ink text-white" : "bg-card text-ink"}`}
+                >
+                  {type === "percent" ? "%" : "$"}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              disabled={closed}
+              value={discText}
+              onChange={(e) => setDiscText(e.target.value)}
+              onBlur={() => commitDiscount(discType, discText)}
+              placeholder={discType === "percent" ? "0 %" : "0.00"}
+              aria-label={discType === "percent" ? "Descuento en porcentaje" : "Descuento en monto"}
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong px-2 text-sm text-ink disabled:bg-page disabled:text-ink-soft"
+            />
+            {discount > 0 && <p className="shrink-0 text-sm font-semibold text-positive">−{formatCurrency(discount)}</p>}
+          </div>
+          {discType === "amount" && subtotal > 0 && Number(discText) > subtotal && (
+            <p className="mt-1 text-xs text-negative">No puede ser mayor al subtotal ({formatCurrency(subtotal)}).</p>
+          )}
+        </div>
+
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -301,6 +357,18 @@ export default function CartPanel({
           </div>
         )}
 
+        {discount > 0 && (
+          <div className="space-y-0.5 text-sm">
+            <div className="flex justify-between text-ink-soft">
+              <span>Subtotal</span>
+              <span className="[font-variant-numeric:tabular-nums]">{formatCurrency(subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-positive">
+              <span>Descuento{discType === "percent" ? ` (${Number(discText)}%)` : ""}</span>
+              <span className="[font-variant-numeric:tabular-nums]">−{formatCurrency(discount)}</span>
+            </div>
+          </div>
+        )}
         <div className="flex items-baseline justify-between">
           <p className="text-sm font-semibold text-ink">Total a pagar</p>
           <p className="text-lg font-bold text-ink">{formatCurrency(total)}</p>
