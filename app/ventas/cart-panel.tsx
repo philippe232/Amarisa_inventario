@@ -7,6 +7,7 @@ import { getDisplayName } from "@/lib/items";
 import { lineTotal, orderTotals, round2, totalPaid as sumPaid, type OrderDiscount } from "@/lib/sales/orders";
 import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
+import MoneyInput from "@/components/MoneyInput";
 import PhotoLightbox from "@/components/PhotoLightbox";
 import { OrderStatusBadge, PhotoThumb, formatDate, type PaymentInput, type QueueItem } from "./shared";
 
@@ -241,29 +242,23 @@ export default function CartPanel({
                 </label>
                 <label className="block">
                   <span className="text-xs font-medium whitespace-nowrap text-ink-soft">Pagado c/u</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
+                  <MoneyInput
                     disabled={closed}
                     value={d.unit}
-                    onChange={(e) => changeUnit(line, e.target.value)}
+                    onChange={(v) => changeUnit(line, v)}
                     onBlur={() => commitLine(line, max)}
-                    aria-label={`Precio pagado por unidad de ${item?.name ?? "artículo"}`}
+                    ariaLabel={`Precio pagado por unidad de ${item?.name ?? "artículo"}`}
                     className={inputClass}
                   />
                 </label>
                 <label className="block">
                   <span className="text-xs font-medium whitespace-nowrap text-ink-soft">Total pagado</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
+                  <MoneyInput
                     disabled={closed}
                     value={d.total}
-                    onChange={(e) => changeTotal(line, e.target.value)}
+                    onChange={(v) => changeTotal(line, v)}
                     onBlur={() => commitLine(line, max)}
-                    aria-label={`Total pagado por ${item?.name ?? "artículo"}`}
+                    ariaLabel={`Total pagado por ${item?.name ?? "artículo"}`}
                     className={inputClass}
                   />
                 </label>
@@ -322,18 +317,30 @@ export default function CartPanel({
                 </button>
               ))}
             </div>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              disabled={closed}
-              value={discText}
-              onChange={(e) => setDiscText(e.target.value)}
-              onBlur={() => commitDiscount(discType, discText)}
-              placeholder={discType === "percent" ? "0 %" : "0.00"}
-              aria-label={discType === "percent" ? "Descuento en porcentaje" : "Descuento en monto"}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong px-2 text-sm text-ink disabled:bg-page disabled:text-ink-soft"
-            />
+            {discType === "percent" ? (
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                disabled={closed}
+                value={discText}
+                onChange={(e) => setDiscText(e.target.value)}
+                onBlur={() => commitDiscount(discType, discText)}
+                placeholder="0 %"
+                aria-label="Descuento en porcentaje"
+                className="h-9 min-w-0 flex-1 rounded-md border border-line-strong px-2 text-sm text-ink disabled:bg-page disabled:text-ink-soft"
+              />
+            ) : (
+              <MoneyInput
+                disabled={closed}
+                value={discText}
+                onChange={setDiscText}
+                onBlur={() => commitDiscount(discType, discText)}
+                placeholder="$0"
+                ariaLabel="Descuento en monto"
+                className="h-9 min-w-0 flex-1 rounded-md border border-line-strong px-2 text-sm text-ink disabled:bg-page disabled:text-ink-soft"
+              />
+            )}
             {discount > 0 && <p className="shrink-0 text-sm font-semibold text-positive">−{formatCurrency(discount)}</p>}
           </div>
           {discType === "amount" && subtotal > 0 && Number(discText) > subtotal && (
@@ -409,11 +416,11 @@ export default function CartPanel({
 
           <div className="grid grid-cols-2 gap-2">
             <div className="flex gap-1.5">
-              <input
-                type="number"
+              <MoneyInput
                 value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
+                onChange={setPayAmount}
                 placeholder="Monto"
+                ariaLabel="Monto del pago"
                 className="h-9 w-full min-w-0 rounded-md border border-line-strong px-2 text-sm text-ink"
               />
               <button

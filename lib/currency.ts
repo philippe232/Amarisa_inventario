@@ -20,3 +20,17 @@ const wholeFormatter = new Intl.NumberFormat("es-MX", {
 export function formatCurrencyWhole(value: number | string): string {
   return wholeFormatter.format(typeof value === "string" ? Number(value) : value);
 }
+
+// Whole pesos when there are no cents ("$1,000"), cents only when there are
+// ("$83.33") — for amounts someone types, where neither forced ".00" nor
+// rounding the cents away is right.
+const flexFormatter = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+export function formatCurrencyFlex(value: number | string): string {
+  return flexFormatter.format(typeof value === "string" ? Number(value) : value);
+}
