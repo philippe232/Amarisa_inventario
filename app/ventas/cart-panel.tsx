@@ -5,8 +5,8 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import { lineTotal, orderTotals, round2, totalPaid as sumPaid } from "@/lib/sales/orders";
-import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
-import type { ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
+import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
+import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
 import { OrderStatusBadge, formatDate, type PaymentInput, type QueueItem } from "./shared";
 
 // What the three linked inputs of a line hold while being typed, as
@@ -60,9 +60,10 @@ export default function CartPanel({
   const [closing, setClosing] = useState(false);
 
   const [payAmount, setPayAmount] = useState("");
-  // null = follow the order's forma de pago until a payment says otherwise.
+  // null = follow the order's forma de pago until a payment says otherwise
+  // ("Por Pagar" isn't a way of paying, so it falls back to Efectivo).
   const [payMethodPick, setPayMethodPick] = useState<PaymentMethod | null>(null);
-  const payMethod = payMethodPick ?? order.payment_method ?? "efectivo";
+  const payMethod: PaymentMethod = payMethodPick ?? (order.payment_method && order.payment_method !== "por_pagar" ? order.payment_method : "efectivo");
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [payNote, setPayNote] = useState("");
   const [addingPayment, setAddingPayment] = useState(false);
@@ -266,10 +267,10 @@ export default function CartPanel({
           <span className="text-xs font-medium text-ink-soft">Forma de pago</span>
           <select
             value={order.payment_method ?? "efectivo"}
-            onChange={(e) => void onUpdateOrder({ payment_method: e.target.value as PaymentMethod })}
+            onChange={(e) => void onUpdateOrder({ payment_method: e.target.value as FormaDePago })}
             className="mt-1 h-10 w-full rounded-md border border-line-strong bg-card px-2 text-sm text-ink"
           >
-            {PAYMENT_METHOD_OPTIONS.map((o) => (
+            {FORMA_DE_PAGO_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

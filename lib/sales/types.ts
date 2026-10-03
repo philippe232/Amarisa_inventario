@@ -5,6 +5,10 @@
 // accounts (db/migrations/0039).
 export type PaymentMethod = "efectivo" | "spei_8055" | "spei_pas";
 
+// An order's forma de pago: one of those, or "por_pagar" (not paid yet —
+// it can never be the method of an actual payment).
+export type FormaDePago = PaymentMethod | "por_pagar";
+
 export type ItemSale = {
   id: string;
   item_id: string;
@@ -44,7 +48,7 @@ export type SaleOrder = {
   notes: string | null;
   status: OrderStatus;
   requires_invoice: boolean;
-  payment_method: PaymentMethod | null;
+  payment_method: FormaDePago | null;
   created_by: string | null;
   created_at: string;
   closed_at: string | null;

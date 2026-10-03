@@ -2,7 +2,7 @@
 
 import { formatCurrency } from "@/lib/currency";
 import { lineTotal, orderTotals, round2, totalPaid } from "@/lib/sales/orders";
-import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
+import { FORMA_DE_PAGO_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
 import { formatDate } from "./shared";
 
@@ -100,7 +100,7 @@ export default function ResumenView({
                 {formatDate(order.closed_at)} · {articles} {articles === 1 ? "artículo" : "artículos"} · {pieces} pzas
               </p>
               <p className="truncate text-xs text-ink-soft">
-                Forma de pago: {order.payment_method ? PAYMENT_METHOD_LABELS[order.payment_method] : "—"}
+                Forma de pago: {order.payment_method ? FORMA_DE_PAGO_LABELS[order.payment_method] : "—"}
                 {order.requires_invoice && " · Con factura"}
               </p>
             </div>
