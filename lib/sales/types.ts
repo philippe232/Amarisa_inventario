@@ -1,7 +1,9 @@
 // Mirrors db/migrations/0029_item_sales.sql, 0030's factura/SPEI
 // rework, 0032's quantity, 0034's payment_method and 0035's orders — kept by hand, same convention as lib/types.ts for items.
 
-export type PaymentMethod = "efectivo" | "spei" | "otro";
+// The three ways a sale is paid: cash, or a SPEI transfer into one of two
+// accounts (db/migrations/0039).
+export type PaymentMethod = "efectivo" | "spei_8055" | "spei_pas";
 
 export type ItemSale = {
   id: string;
