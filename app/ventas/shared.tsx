@@ -1,4 +1,5 @@
 import type { Item } from "@/lib/types";
+import { round2 } from "@/lib/sales/orders";
 import type { OrderStatus, PaymentMethod } from "@/lib/sales/types";
 
 export type QueueItem = Pick<Item, "id" | "name" | "brand" | "model" | "area" | "quantity" | "ref_code" | "status" | "asking_price"> & {
@@ -65,4 +66,27 @@ export function buildBuyerLists(rows: WishRow[]): BuyerList[] {
     if (r.created_at > list.lastAt) list.lastAt = r.created_at;
   }
   return [...byUser.values()].sort((a, b) => Number(a.anonymous) - Number(b.anonymous) || b.lastAt.localeCompare(a.lastAt));
+}
+
+// What a buyer's list comes to: each article's units (as many as they
+// asked for, capped at what's still free) at their offer per piece or the
+// list price. Shared by the list row's chip and the list's own panel so
+// the two can never disagree.
+export function listTotals(
+  list: BuyerList,
+  itemsById: Map<string, QueueItem>,
+  reservedByItem: Map<string, number>,
+): { total: number; pieces: number } {
+  let total = 0;
+  let pieces = 0;
+  for (const entry of list.items) {
+    const item = itemsById.get(entry.itemId);
+    if (!item) continue;
+    const available = item.quantity - (reservedByItem.get(entry.itemId) ?? 0);
+    const units = Math.max(0, Math.min(entry.quantity, available));
+    if (units < 1) continue;
+    total += (entry.bid ?? item.asking_price ?? 0) * units;
+    pieces += units;
+  }
+  return { total: round2(total), pieces };
 }

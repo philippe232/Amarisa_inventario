@@ -16,7 +16,7 @@ import BuyerListPanel from "./buyer-list-panel";
 import CartPanel, { type LinePatch } from "./cart-panel";
 import ItemPanel, { type AddTarget } from "./item-panel";
 import ResumenView from "./resumen-view";
-import { OrderStatusBadge, buildBuyerLists, listLabel, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
+import { OrderStatusBadge, buildBuyerLists, listLabel, listTotals, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
 
 type View = "articulos" | "carritos" | "resumen";
 type OrderPatch = Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method">>;
@@ -172,6 +172,21 @@ export function VentasView({
   const buyerLists = useMemo(() => buildBuyerLists(wishRows), [wishRows]);
   const visibleLists = useMemo(() => buyerLists.filter((l) => showAnonymous || !l.anonymous), [buyerLists, showAnonymous]);
   const anonymousCount = buyerLists.filter((l) => l.anonymous).length;
+
+  // The open cart already made from a buyer's list (matched by their
+  // email), if any.
+  function existingOrderFor(list: { email: string | null }): SaleOrder | null {
+    return list.email ? (openOrders.find((o) => o.buyer_contact === list.email) ?? null) : null;
+  }
+  // Units spoken for by OTHER carts: a buyer's own cart, made from their
+  // list, doesn't count against that same list.
+  function reservedForList(list: { email: string | null }): Map<string, number> {
+    const own = existingOrderFor(list);
+    if (!own) return reservedByItem;
+    const map = new Map(reservedByItem);
+    for (const l of linesByOrder.get(own.id) ?? []) map.set(l.item_id, (map.get(l.item_id) ?? 0) - l.quantity);
+    return map;
+  }
 
   const soldCount = items.filter((i) => i.status === "sold").length;
 
@@ -492,8 +507,11 @@ export function VentasView({
                         {list.items.length} {list.items.length === 1 ? "artículo" : "artículos"} · {formatDate(list.lastAt)}
                       </p>
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-neutral/30 bg-neutral/10 px-2.5 py-0.5 text-xs font-bold text-neutral">
-                      Lista
+                    <span
+                      title="Total de la lista: lo que pidió, a su oferta o al precio de lista"
+                      className="inline-flex shrink-0 items-center rounded-full border border-neutral/30 bg-neutral/10 px-2.5 py-0.5 text-xs font-bold text-neutral [font-variant-numeric:tabular-nums]"
+                    >
+                      {formatCurrency(listTotals(list, itemsById, reservedForList(list)).total)}
                     </span>
                   </button>
                 ))}
@@ -508,8 +526,8 @@ export function VentasView({
                 key={selectedList.key}
                 list={selectedList}
                 itemsById={itemsById}
-                reservedByItem={reservedByItem}
-                existingOrder={selectedList.email ? (openOrders.find((o) => o.buyer_contact === selectedList.email) ?? null) : null}
+                reservedByItem={reservedForList(selectedList)}
+                existingOrder={existingOrderFor(selectedList)}
                 onBack={() => setSelectedListKey(null)}
                 onConvert={() => convertList(selectedList)}
                 onOpenOrder={openOrder}

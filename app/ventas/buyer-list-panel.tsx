@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import type { SaleOrder } from "@/lib/sales/types";
-import { formatDate, listLabel, type BuyerList, type QueueItem } from "./shared";
+import { formatDate, listLabel, listTotals, type BuyerList, type QueueItem } from "./shared";
 
 // A buyer's own list shown as a cart: each article they saved, at their
 // offer (or the list price), with what's still available. "Convertir en
@@ -40,8 +40,7 @@ export default function BuyerListPanel({
     return { entry, item, available, price, units };
   });
   const addable = rows.filter((r) => r.item && r.units >= 1);
-  const pieces = addable.reduce((s, r) => s + r.units, 0);
-  const total = addable.reduce((s, r) => s + r.price * r.units, 0);
+  const { total, pieces } = listTotals(list, itemsById, reservedByItem);
 
   return (
     <div className="space-y-4 pb-6">
