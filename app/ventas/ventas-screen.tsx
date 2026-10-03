@@ -73,6 +73,8 @@ export function VentasView({
   const [wishRows, setWishRows] = useState<WishRow[]>([]);
   const [selectedListKey, setSelectedListKey] = useState<string | null>(null);
   const [showAnonymous, setShowAnonymous] = useState(false);
+  // Filter over the carts list: leave out the ones already closed.
+  const [hideClosed, setHideClosed] = useState(false);
 
   const [view, setView] = useState<View>("articulos");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -189,6 +191,9 @@ export function VentasView({
     for (const l of linesByOrder.get(own.id) ?? []) map.set(l.item_id, (map.get(l.item_id) ?? 0) - l.quantity);
     return map;
   }
+
+  const closedCount = orders.length - openOrders.length;
+  const shownOrders = hideClosed ? openOrders : sortedOrders;
 
   const soldCount = items.filter((i) => i.status === "sold").length;
 
@@ -452,7 +457,18 @@ export function VentasView({
                 <Plus className="h-4 w-4" aria-hidden="true" /> Crear
               </button>
             </div>
-            {sortedOrders.map((order) => {
+            {orders.length > 0 && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-bold tracking-wide text-ink-soft uppercase">Carritos</p>
+                {closedCount > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs text-ink-soft">
+                    <input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} className="h-3.5 w-3.5" />
+                    Ocultar cerrados ({closedCount})
+                  </label>
+                )}
+              </div>
+            )}
+            {shownOrders.map((order) => {
               const ols = linesByOrder.get(order.id) ?? [];
               const { total } = orderTotals(ols.map(lineTotal), order.requires_invoice, orderDiscountOf(order));
               const pieces = ols.reduce((n, l) => n + l.quantity, 0);
@@ -478,7 +494,8 @@ export function VentasView({
                 </button>
               );
             })}
-            {sortedOrders.length === 0 && <p className="p-4 text-sm text-ink-soft">Todavía no hay carritos. Crea uno arriba o agrega un artículo desde «Por artículo».</p>}
+            {orders.length === 0 && <p className="p-4 text-sm text-ink-soft">Todavía no hay carritos. Crea uno arriba o agrega un artículo desde «Por artículo».</p>}
+            {orders.length > 0 && shownOrders.length === 0 && <p className="p-2 text-sm text-ink-soft">No hay carritos abiertos.</p>}
 
             {buyerLists.length > 0 && (
               <div className="space-y-1.5 border-t border-line pt-3">
