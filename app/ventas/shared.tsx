@@ -95,9 +95,13 @@ export function listTotals(
   return { total: round2(total), pieces };
 }
 
-// An article's photo as a small square: tap it to open the full-size
-// viewer (onOpen gets every photo), or an empty placeholder when it has
-// none. Used wherever an article's info is listed in Ventas.
+// An article's photo as a panel down the left edge of its card, the full
+// height of the card (the card is a flex row with overflow-hidden and the
+// panel stretches to it): tap it to open the full-size viewer (onOpen gets
+// every photo), or an empty placeholder when it has none. Used wherever an
+// article's info is listed in Ventas.
+const THUMB = "relative w-16 shrink-0 self-stretch border-r border-line sm:w-24";
+
 export function PhotoThumb({
   item,
   onOpen,
@@ -112,16 +116,16 @@ export function PhotoThumb({
         type="button"
         onClick={() => onOpen(item.photoUrls, name)}
         aria-label={`Ver fotos de ${name}`}
-        className="h-12 w-12 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-line bg-card"
+        className={`${THUMB} cursor-zoom-in overflow-hidden bg-card`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={item.photoUrls[0]} alt="" className="h-full w-full object-cover" />
+        <img src={item.photoUrls[0]} alt="" className="absolute inset-0 h-full w-full object-cover" />
       </button>
     );
   }
   return (
-    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-card text-ink-faint">
-      <ImageOff className="h-4 w-4" aria-hidden="true" />
+    <span className={`${THUMB} flex items-center justify-center bg-page text-ink-faint`}>
+      <ImageOff className="h-5 w-5" aria-hidden="true" />
     </span>
   );
 }

@@ -64,8 +64,9 @@ export default function BuyerListPanel({
       <div className="space-y-2 rounded-md border border-line bg-card p-3">
         <p className="text-sm font-semibold text-ink">Artículos de su lista</p>
         {rows.map(({ entry, item, available, price, units }) => (
-          <div key={entry.itemId} className="flex items-start gap-3 rounded-md border border-line p-2.5">
+          <div key={entry.itemId} className="flex overflow-hidden rounded-md border border-line">
             <PhotoThumb item={item} onOpen={(photos, name) => setLightbox({ photos, name })} />
+            <div className="flex min-w-0 flex-1 items-start gap-3 p-2.5">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink">{item ? getDisplayName(item) : "Artículo"}</p>
               <p className="text-xs text-ink-soft">
@@ -85,6 +86,7 @@ export default function BuyerListPanel({
             <div className="shrink-0 text-right">
               <p className="text-sm font-semibold text-ink">{formatCurrency(price * units)}</p>
               {units > 1 && <p className="text-xs text-ink-soft">{units} × {formatCurrency(price)}</p>}
+            </div>
             </div>
           </div>
         ))}

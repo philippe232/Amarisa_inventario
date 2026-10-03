@@ -206,9 +206,10 @@ export default function CartPanel({
           const d = draftFor(line);
           const qtyBad = !(Number(d.qty) >= 1 && Number(d.qty) <= max);
           return (
-            <div key={line.id} className="space-y-2 rounded-md border border-line p-2.5">
+            <div key={line.id} className="flex overflow-hidden rounded-md border border-line">
+              <PhotoThumb item={item} onOpen={(photos, name) => setLightbox({ photos, name })} />
+              <div className="min-w-0 flex-1 space-y-2 p-2.5">
               <div className="flex items-start gap-3">
-                <PhotoThumb item={item} onOpen={(photos, name) => setLightbox({ photos, name })} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{item ? getDisplayName(item) : "Artículo"}</p>
                   <p className="text-xs text-ink-soft">
@@ -222,9 +223,9 @@ export default function CartPanel({
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <label className="block">
-                  <span className="text-xs font-medium text-ink-soft">Unidades</span>
+                  <span className="text-xs font-medium whitespace-nowrap text-ink-soft">Unidades</span>
                   <input
                     type="number"
                     min={1}
@@ -239,7 +240,7 @@ export default function CartPanel({
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-ink-soft">Pagado c/u</span>
+                  <span className="text-xs font-medium whitespace-nowrap text-ink-soft">Pagado c/u</span>
                   <input
                     type="number"
                     min={0}
@@ -253,7 +254,7 @@ export default function CartPanel({
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-ink-soft">Total pagado</span>
+                  <span className="text-xs font-medium whitespace-nowrap text-ink-soft">Total pagado</span>
                   <input
                     type="number"
                     min={0}
@@ -268,6 +269,7 @@ export default function CartPanel({
                 </label>
               </div>
               {qtyBad && <p className="text-xs text-negative">Unidades: entre 1 y {max}.</p>}
+              </div>
             </div>
           );
         })}
