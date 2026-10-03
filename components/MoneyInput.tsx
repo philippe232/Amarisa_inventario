@@ -4,12 +4,15 @@ import { useState } from "react";
 import { formatCurrencyFlex } from "@/lib/currency";
 import { selectAllOnFocus } from "@/lib/select-on-focus";
 
-// Digits and one decimal point only — typing, pasting "$1,200.50" and
-// everything in between all come out as a plain number string.
-function sanitize(raw: string): string {
+// Digits and one decimal point only (plus a leading minus when negatives
+// are allowed) — typing, pasting "$1,200.50" and everything in between all
+// come out as a plain number string.
+function sanitize(raw: string, allowNegative: boolean): string {
+  const negative = allowNegative && raw.trim().startsWith("-");
   const cleaned = raw.replace(/[^0-9.]/g, "");
   const dot = cleaned.indexOf(".");
-  return dot === -1 ? cleaned : cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, "");
+  const digits = dot === -1 ? cleaned : cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, "");
+  return negative ? `-${digits}` : digits;
 }
 
 // An amount field: "$1,000" (or "$83.33") while you're not in it, the bare
@@ -20,6 +23,7 @@ export default function MoneyInput({
   onChange,
   onBlur,
   disabled = false,
+  allowNegative = false,
   placeholder,
   ariaLabel,
   className,
@@ -28,6 +32,8 @@ export default function MoneyInput({
   onChange: (value: string) => void;
   onBlur?: () => void;
   disabled?: boolean;
+  // A leading "-" is kept (a refund, a correction); off by default.
+  allowNegative?: boolean;
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
@@ -51,7 +57,7 @@ export default function MoneyInput({
         const el = e.target;
         setTimeout(() => selectAllOnFocus({ target: el } as React.FocusEvent<HTMLInputElement>), 0);
       }}
-      onChange={(e) => onChange(sanitize(e.target.value))}
+      onChange={(e) => onChange(sanitize(e.target.value, allowNegative))}
       onBlur={() => {
         setFocused(false);
         onBlur?.();

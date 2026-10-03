@@ -437,8 +437,9 @@ export default function CartPanel({
           {payments.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm">
               <div>
-                <p className="font-medium text-ink">
+                <p className={`font-medium ${p.amount < 0 ? "text-negative" : "text-ink"}`}>
                   {formatCurrency(p.amount)} · {PAYMENT_METHOD_LABELS[p.method]}
+                  {p.amount < 0 && " · devolución"}
                 </p>
                 <p className="text-xs text-ink-soft">
                   {formatDate(p.paid_at)}
@@ -456,6 +457,7 @@ export default function CartPanel({
               <MoneyInput
                 value={payAmount}
                 onChange={setPayAmount}
+                allowNegative
                 placeholder="Monto"
                 ariaLabel="Monto del pago"
                 className="h-9 w-full min-w-0 rounded-md border border-line-strong px-2 text-sm text-ink"
@@ -496,7 +498,7 @@ export default function CartPanel({
           </div>
           <button
             type="button"
-            disabled={addingPayment || !(Number(payAmount) > 0)}
+            disabled={addingPayment || !Number.isFinite(Number(payAmount)) || Number(payAmount) === 0}
             onClick={async () => {
               setAddingPayment(true);
               await onAddPayment({ amount: round2(Number(payAmount)), method: payMethod, paid_at: payDate, note: payNote.trim() || null });
@@ -508,6 +510,7 @@ export default function CartPanel({
           >
             <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Agregar pago
           </button>
+          <p className="text-xs text-ink-faint">Un monto negativo registra una devolución.</p>
         </div>
 
         <div className="flex flex-wrap gap-2 border-t border-line pt-3">

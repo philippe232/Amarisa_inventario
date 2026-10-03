@@ -106,7 +106,7 @@ export async function downloadOrderPdf(order: SaleOrder, lines: PdfLine[], payme
   }
   if (order.requires_invoice) totalRows.push({ label: "IVA (16%)", value: formatCurrency(iva) });
   totalRows.push({ label: "Total a pagar", value: formatCurrency(total), bold: true, big: true });
-  if (paid > 0) totalRows.push({ label: "Pagado", value: formatCurrency(paid) });
+  if (paid !== 0) totalRows.push({ label: "Pagado", value: formatCurrency(paid) });
   totalRows.push({ label: "Saldo pendiente", value: formatCurrency(saldo), bold: true });
 
   if (y + totalRows.length * 17 + 20 > pageH - 54) {
