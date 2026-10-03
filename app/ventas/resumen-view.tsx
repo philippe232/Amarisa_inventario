@@ -1,6 +1,7 @@
 "use client";
 
 import { formatCurrency } from "@/lib/currency";
+import { paymentsNet } from "@/lib/sales/commission";
 import { lineTotal, orderDiscountOf, orderTotals, round2, totalPaid } from "@/lib/sales/orders";
 import { FORMA_DE_PAGO_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
@@ -45,6 +46,9 @@ export default function ResumenView({
   const totalCobrado = round2(rows.reduce((s, r) => s + r.paid, 0));
   const saldoPendiente = round2(rows.reduce((s, r) => s + r.saldo, 0));
 
+  // CLIP's commission (2.6% + IVA) comes off what was collected.
+  const { commission: totalComision, net: ingresoNeto } = paymentsNet(rows.flatMap((r) => r.payments));
+
   const byMethod = new Map<string, number>();
   for (const r of rows) for (const p of r.payments) byMethod.set(p.method, (byMethod.get(p.method) ?? 0) + p.amount);
 
@@ -67,6 +71,18 @@ export default function ResumenView({
           <p className="text-xs text-ink-soft">Pedidos cerrados</p>
           <p className="text-lg font-bold text-ink">{rows.length}</p>
         </div>
+        {totalComision !== 0 && (
+          <>
+            <div className="rounded-md border border-line bg-card p-3">
+              <p className="text-xs text-ink-soft">Comisión CLIP (2.6% + IVA)</p>
+              <p className="text-lg font-bold text-negative">−{formatCurrency(Math.abs(totalComision))}</p>
+            </div>
+            <div className="rounded-md border border-line bg-card p-3">
+              <p className="text-xs text-ink-soft">Ingreso neto cobrado</p>
+              <p className="text-lg font-bold text-ink">{formatCurrency(ingresoNeto)}</p>
+            </div>
+          </>
+        )}
       </div>
       {openCount > 0 && (
         <p className="mt-2 text-xs text-ink-soft">

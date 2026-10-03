@@ -6,6 +6,8 @@ export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] =
   { value: "efectivo", label: "Efectivo" },
   { value: "spei_8055", label: "SPEI - 8055" },
   { value: "spei_pas", label: "SPEI - PAS" },
+  { value: "clip", label: "CLIP" },
+  { value: "en_especie", label: "En especie" },
 ];
 
 // An order's forma de pago: those, plus "Por Pagar" for a buyer who hasn't

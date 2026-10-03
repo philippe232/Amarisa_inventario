@@ -1,9 +1,9 @@
 // Mirrors db/migrations/0029_item_sales.sql, 0030's factura/SPEI
 // rework, 0032's quantity, 0034's payment_method and 0035's orders — kept by hand, same convention as lib/types.ts for items.
 
-// The three ways a sale is paid: cash, or a SPEI transfer into one of two
-// accounts (db/migrations/0039).
-export type PaymentMethod = "efectivo" | "spei_8055" | "spei_pas";
+// The ways a sale is paid: cash, a SPEI transfer into one of two accounts,
+// the CLIP card terminal, or in kind (db/migrations/0039, 0043).
+export type PaymentMethod = "efectivo" | "spei_8055" | "spei_pas" | "clip" | "en_especie";
 
 // An order's forma de pago: one of those, or "por_pagar" (not paid yet —
 // it can never be the method of an actual payment).

@@ -5,6 +5,7 @@ import { ArrowLeft, FileDown, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import { lineTotal, orderTotals, round2, totalPaid as sumPaid, type OrderDiscount } from "@/lib/sales/orders";
+import { paymentCommission, paymentsNet } from "@/lib/sales/commission";
 import { downloadOrderPdf } from "@/lib/sales/pdf";
 import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
@@ -154,6 +155,9 @@ export default function CartPanel({
   const discountDraft: OrderDiscount = Number(discText) > 0 ? { type: discType, value: Number(discText) } : null;
   const { subtotal, discount, iva, total } = orderTotals(lines.map(effectiveTotal), order.requires_invoice, discountDraft);
   const paid = sumPaid(payments);
+  // What CLIP keeps comes off net income only; it never changes what the
+  // buyer owes or has paid.
+  const net = paymentsNet(payments);
   const saldo = Math.max(0, round2(total - paid));
   const pieces = lines.reduce((n, l) => n + (Number(drafts[l.id]?.qty) || l.quantity), 0);
 
@@ -445,12 +449,30 @@ export default function CartPanel({
                   {formatDate(p.paid_at)}
                   {p.note && <> · {p.note}</>}
                 </p>
+                {p.method === "clip" && (
+                  <p className="text-xs text-ink-soft">
+                    Comisión CLIP −{formatCurrency(Math.abs(paymentCommission(p)))} · Neto {formatCurrency(p.amount - paymentCommission(p))}
+                  </p>
+                )}
               </div>
               <button type="button" onClick={() => onDeletePayment(p.id)} aria-label="Eliminar pago" className="text-ink-faint">
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           ))}
+
+          {net.commission !== 0 && (
+            <div className="space-y-0.5 rounded-md border border-line bg-page p-2.5 text-sm">
+              <div className="flex justify-between text-ink-soft">
+                <span>Comisión CLIP (2.6% + IVA)</span>
+                <span className="text-negative [font-variant-numeric:tabular-nums]">−{formatCurrency(Math.abs(net.commission))}</span>
+              </div>
+              <div className="flex justify-between font-semibold text-ink">
+                <span>Ingreso neto cobrado</span>
+                <span className="[font-variant-numeric:tabular-nums]">{formatCurrency(net.net)}</span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div className="flex gap-1.5">
