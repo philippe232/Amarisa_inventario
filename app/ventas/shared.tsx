@@ -1,3 +1,5 @@
+import { ImageOff } from "lucide-react";
+import { getDisplayName } from "@/lib/items";
 import type { Item } from "@/lib/types";
 import { round2 } from "@/lib/sales/orders";
 import type { OrderStatus, PaymentMethod } from "@/lib/sales/types";
@@ -91,4 +93,35 @@ export function listTotals(
     pieces += units;
   }
   return { total: round2(total), pieces };
+}
+
+// An article's photo as a small square: tap it to open the full-size
+// viewer (onOpen gets every photo), or an empty placeholder when it has
+// none. Used wherever an article's info is listed in Ventas.
+export function PhotoThumb({
+  item,
+  onOpen,
+}: {
+  item: QueueItem | undefined;
+  onOpen: (photos: string[], name: string) => void;
+}) {
+  if (item && item.photoUrls.length > 0) {
+    const name = getDisplayName(item);
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(item.photoUrls, name)}
+        aria-label={`Ver fotos de ${name}`}
+        className="h-12 w-12 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-line bg-card"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={item.photoUrls[0]} alt="" className="h-full w-full object-cover" />
+      </button>
+    );
+  }
+  return (
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-card text-ink-faint">
+      <ImageOff className="h-4 w-4" aria-hidden="true" />
+    </span>
+  );
 }

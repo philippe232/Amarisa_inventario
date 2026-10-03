@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import type { SaleOrder } from "@/lib/sales/types";
-import { formatDate, listLabel, listTotals, type BuyerList, type QueueItem } from "./shared";
+import PhotoLightbox from "@/components/PhotoLightbox";
+import { PhotoThumb, formatDate, listLabel, listTotals, type BuyerList, type QueueItem } from "./shared";
 
 // A buyer's own list shown as a cart: each article they saved, at their
 // offer (or the list price), with what's still available. "Convertir en
@@ -29,6 +30,8 @@ export default function BuyerListPanel({
   onOpenOrder: (orderId: string) => void;
 }) {
   const [converting, setConverting] = useState(false);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; name: string } | null>(null);
+  const closeLightbox = useCallback(() => setLightbox(null), []);
 
   const rows = list.items.map((entry) => {
     const item = itemsById.get(entry.itemId);
@@ -44,6 +47,7 @@ export default function BuyerListPanel({
 
   return (
     <div className="space-y-4 pb-6">
+      {lightbox && <PhotoLightbox photos={lightbox.photos} alt={lightbox.name} onClose={closeLightbox} />}
       <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-sm text-ink-soft md:hidden">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver
       </button>
@@ -60,8 +64,9 @@ export default function BuyerListPanel({
       <div className="space-y-2 rounded-md border border-line bg-card p-3">
         <p className="text-sm font-semibold text-ink">Artículos de su lista</p>
         {rows.map(({ entry, item, available, price, units }) => (
-          <div key={entry.itemId} className="flex items-start justify-between gap-3 rounded-md border border-line p-2.5">
-            <div className="min-w-0">
+          <div key={entry.itemId} className="flex items-start gap-3 rounded-md border border-line p-2.5">
+            <PhotoThumb item={item} onOpen={(photos, name) => setLightbox({ photos, name })} />
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink">{item ? getDisplayName(item) : "Artículo"}</p>
               <p className="text-xs text-ink-soft">
                 {item?.ref_code && <>{item.ref_code} · </>}
