@@ -129,3 +129,23 @@ export function PhotoThumb({
     </span>
   );
 }
+
+// The same photo panel, not clickable: for rows that are themselves a
+// button (the article list), where a nested button isn't allowed. Width
+// comes from the caller.
+export function PhotoPanel({ url, className = "w-14" }: { url: string | null; className?: string }) {
+  const base = `relative shrink-0 self-stretch border-r border-line ${className}`;
+  if (url) {
+    return (
+      <span className={`${base} overflow-hidden bg-card`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      </span>
+    );
+  }
+  return (
+    <span className={`${base} flex items-center justify-center bg-page text-ink-faint`}>
+      <ImageOff className="h-5 w-5" aria-hidden="true" />
+    </span>
+  );
+}

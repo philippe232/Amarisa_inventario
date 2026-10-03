@@ -16,7 +16,7 @@ import BuyerListPanel from "./buyer-list-panel";
 import CartPanel, { type LinePatch } from "./cart-panel";
 import ItemPanel, { type AddTarget } from "./item-panel";
 import ResumenView from "./resumen-view";
-import { OrderStatusBadge, buildBuyerLists, listLabel, listTotals, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
+import { OrderStatusBadge, PhotoPanel, buildBuyerLists, listLabel, listTotals, formatDate, type PaymentInput, type QueueItem, type WishRow } from "./shared";
 
 type View = "articulos" | "carritos" | "resumen";
 type OrderPatch = Partial<Pick<SaleOrder, "name" | "buyer_contact" | "notes" | "requires_invoice" | "payment_method" | "discount_type" | "discount_value">>;
@@ -587,18 +587,21 @@ export function VentasView({
                   key={item.id}
                   type="button"
                   onClick={() => setSelectedItemId(item.id)}
-                  className={`flex w-full items-center gap-2.5 rounded-md border px-3 py-2.5 text-left ${
+                  className={`flex w-full items-stretch overflow-hidden rounded-md border text-left ${
                     selectedItemId === item.id ? "border-ink bg-page" : "border-line bg-card"
                   }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
-                    <p className="truncate text-xs text-ink-soft">
-                      {item.area ?? "—"}
-                      {available < item.quantity && <> · Disp. {Math.max(0, available)}/{item.quantity}</>}
-                    </p>
+                  <PhotoPanel url={item.photoUrl} />
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{getDisplayName(item)}</p>
+                      <p className="truncate text-xs text-ink-soft">
+                        {item.area ?? "—"}
+                        {available < item.quantity && <> · Disp. {Math.max(0, available)}/{item.quantity}</>}
+                      </p>
+                    </div>
+                    <StatusBadge status={item.status} />
                   </div>
-                  <StatusBadge status={item.status} />
                 </button>
               );
             })}
