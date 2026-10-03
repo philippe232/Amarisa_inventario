@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { useCallback, useState } from "react";
+import { ArrowLeft, ImageOff, Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
 import { lineTotal, orderTotals, round2, totalPaid as sumPaid, type OrderDiscount } from "@/lib/sales/orders";
 import { FORMA_DE_PAGO_OPTIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS } from "@/lib/sales/status";
 import type { FormaDePago, ItemSale, OrderPayment, PaymentMethod, SaleOrder } from "@/lib/sales/types";
+import PhotoLightbox from "@/components/PhotoLightbox";
 import { OrderStatusBadge, formatDate, type PaymentInput, type QueueItem } from "./shared";
 
 // What the three linked inputs of a line hold while being typed, as
@@ -60,6 +61,8 @@ export default function CartPanel({
   const [notes, setNotes] = useState(order.notes ?? "");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [closing, setClosing] = useState(false);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; name: string } | null>(null);
+  const closeLightbox = useCallback(() => setLightbox(null), []);
   // The discount being typed; saved when the field loses focus (or the %/$
   // switch is flipped), but it drives the totals as soon as it changes.
   const [discType, setDiscType] = useState<"percent" | "amount">(order.discount_type ?? "percent");
@@ -131,6 +134,7 @@ export default function CartPanel({
 
   return (
     <div className="space-y-4 pb-6">
+      {lightbox && <PhotoLightbox photos={lightbox.photos} alt={lightbox.name} onClose={closeLightbox} />}
       <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-sm text-ink-soft md:hidden">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver
       </button>
@@ -203,8 +207,23 @@ export default function CartPanel({
           const qtyBad = !(Number(d.qty) >= 1 && Number(d.qty) <= max);
           return (
             <div key={line.id} className="space-y-2 rounded-md border border-line p-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                {item && item.photoUrls.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setLightbox({ photos: item.photoUrls, name: getDisplayName(item) })}
+                    aria-label={`Ver fotos de ${getDisplayName(item)}`}
+                    className="h-12 w-12 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-line bg-card"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.photoUrls[0]} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ) : (
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-card text-ink-faint">
+                    <ImageOff className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{item ? getDisplayName(item) : "Artículo"}</p>
                   <p className="text-xs text-ink-soft">
                     {item?.ref_code && <>{item.ref_code} · </>}

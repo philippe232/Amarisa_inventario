@@ -4,6 +4,8 @@ import type { OrderStatus, PaymentMethod } from "@/lib/sales/types";
 
 export type QueueItem = Pick<Item, "id" | "name" | "brand" | "model" | "area" | "quantity" | "ref_code" | "status" | "asking_price"> & {
   photoUrl: string | null;
+  // Every photo, in order (photoUrl is the first), for the full-size viewer.
+  photoUrls: string[];
 };
 
 export type PaymentInput = { amount: number; method: PaymentMethod; paid_at: string; note: string | null };

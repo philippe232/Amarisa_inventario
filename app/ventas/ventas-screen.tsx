@@ -122,6 +122,7 @@ export function VentasView({
             ...row,
             asking_price: row.asking_price == null ? null : Number(row.asking_price),
             photoUrl: photos?.[0]?.url ?? null,
+            photoUrls: (photos ?? []).map((p) => p.url),
           } as QueueItem;
         }),
       );
