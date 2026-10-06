@@ -1,6 +1,8 @@
 import { ImageOff } from "lucide-react";
+import { viewUrl } from "@/lib/photos";
+import type { ItemPhoto } from "@/lib/types";
 
-export default function PhotoCarousel({ photos, alt }: { photos: { id: string; url: string }[]; alt: string }) {
+export default function PhotoCarousel({ photos, alt }: { photos: ItemPhoto[]; alt: string }) {
   if (photos.length === 0) {
     return (
       <div className="flex aspect-square w-full items-center justify-center bg-page text-ink-faint">
@@ -12,12 +14,14 @@ export default function PhotoCarousel({ photos, alt }: { photos: { id: string; u
   return (
     <div>
       <div className="flex aspect-square w-full snap-x snap-mandatory overflow-x-auto">
-        {photos.map((photo) => (
+        {photos.map((photo, i) => (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={photo.id}
-            src={photo.url}
+            src={viewUrl(photo)}
             alt={alt}
+            loading={i === 0 ? "eager" : "lazy"}
+            decoding="async"
             className="h-full w-full shrink-0 snap-center object-cover"
           />
         ))}

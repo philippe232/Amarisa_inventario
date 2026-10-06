@@ -14,7 +14,7 @@ function ItemPhoto({ url, alt, sold }: { url: string | null; alt: string; sold: 
     return (
       <span className={`h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line bg-card ${sold ? "opacity-50" : ""}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={alt} className="h-full w-full object-cover" />
+        <img src={url} alt={alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
       </span>
     );
   }

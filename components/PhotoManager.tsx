@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Camera, ImagePlus, Images, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { PHOTO_BUCKET, PHOTO_CACHE_CONTROL, makePhotoVariants, storagePath, thumbUrl } from "@/lib/photos";
 import type { ItemPhoto } from "@/lib/types";
 
 // Android/iOS chooser split ported from reference/cereza/app/photo-
@@ -40,23 +41,43 @@ export default function PhotoManager({
     if (!file) return;
     setUploading(true);
     setError(null);
+    const uploaded: string[] = [];
     try {
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${itemId}/${crypto.randomUUID()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("item-photos").upload(path, file);
-      if (uploadError) throw uploadError;
+      // Three JPEG copies, made here before anything is sent: the stored
+      // photo (capped at 2000px), a medium one for the article page and a
+      // thumbnail for lists. Lists and pages then never download a camera-
+      // size original (see lib/photos.ts).
+      const variants = await makePhotoVariants(file);
+      const id = crypto.randomUUID();
+      const paths = { full: `${itemId}/${id}.jpg`, md: `${itemId}/md/${id}.jpg`, thumb: `${itemId}/thumb/${id}.jpg` };
+      for (const key of ["full", "md", "thumb"] as const) {
+        const { error: uploadError } = await supabase.storage.from(PHOTO_BUCKET).upload(paths[key], variants[key], {
+          contentType: "image/jpeg",
+          cacheControl: PHOTO_CACHE_CONTROL,
+        });
+        if (uploadError) throw uploadError;
+        uploaded.push(paths[key]);
+      }
 
-      const { data: urlData } = supabase.storage.from("item-photos").getPublicUrl(path);
+      const publicUrl = (path: string) => supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
       const nextSortOrder = photos.length > 0 ? Math.max(...photos.map((p) => p.sort_order)) + 1 : 0;
       const { data, error: insertError } = await supabase
         .from("item_photos")
-        .insert({ item_id: itemId, url: urlData.publicUrl, sort_order: nextSortOrder })
+        .insert({
+          item_id: itemId,
+          url: publicUrl(paths.full),
+          md_url: publicUrl(paths.md),
+          thumb_url: publicUrl(paths.thumb),
+          sort_order: nextSortOrder,
+        })
         .select("*")
         .single();
       if (insertError) throw insertError;
 
       onChange([...photos, data as ItemPhoto]);
     } catch (err) {
+      // Don't leave half an upload behind.
+      if (uploaded.length > 0) await supabase.storage.from(PHOTO_BUCKET).remove(uploaded);
       setError(err instanceof Error ? err.message : "No se pudo subir la foto.");
     } finally {
       setUploading(false);
@@ -72,8 +93,8 @@ export default function PhotoManager({
     }
     // Best-effort storage cleanup — the row is already gone either way,
     // so a failure here (e.g. an already-missing object) isn't surfaced.
-    const path = photo.url.split("/item-photos/")[1];
-    if (path) await supabase.storage.from("item-photos").remove([path]);
+    const paths = [photo.url, photo.md_url, photo.thumb_url].flatMap((u) => (u ? [storagePath(u)] : [])).filter((p): p is string => !!p);
+    if (paths.length > 0) await supabase.storage.from(PHOTO_BUCKET).remove(paths);
     onChange(photos.filter((p) => p.id !== photo.id));
   }
 
@@ -111,7 +132,7 @@ export default function PhotoManager({
           <div key={photo.id} className="shrink-0">
             <div className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photo.url} alt="" className="h-24 w-24 rounded-lg border border-line-strong object-cover" />
+              <img src={thumbUrl(photo)} alt="" loading="lazy" decoding="async" className="h-24 w-24 rounded-lg border border-line-strong object-cover" />
               <button
                 type="button"
                 onClick={() => handleDelete(photo)}

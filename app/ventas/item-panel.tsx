@@ -62,7 +62,7 @@ export default function ItemPanel({
       <div className="flex items-start gap-3">
         {item.photoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
+          <img src={item.photoUrl} alt="" decoding="async" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
         )}
         <div className="min-w-0 flex-1">
           <p className="font-bold text-ink">{getDisplayName(item)}</p>

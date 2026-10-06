@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
+import { thumbUrl, viewUrl } from "@/lib/photos";
 import { itemStatusFor, lineTotal, orderDiscountOf, orderTotals, reservedQty, round2, soldQty } from "@/lib/sales/orders";
 import type { ItemSale, OrderPayment, SaleOrder } from "@/lib/sales/types";
 import type { ItemStatus } from "@/lib/types";
@@ -100,7 +101,7 @@ export function VentasView({
       const [itemsRes, ordersRes, linesRes, paymentsRes, wishRes] = await Promise.all([
         supabase
           .from("items")
-          .select("id, name, brand, model, area, quantity, ref_code, status, asking_price, item_photos(url)")
+          .select("id, name, brand, model, area, quantity, ref_code, status, asking_price, item_photos(url, thumb_url, md_url)")
           .order("sort_order", { referencedTable: "item_photos" })
           .order("name"),
         supabase.from("sale_orders").select("*").order("created_at"),
@@ -119,12 +120,12 @@ export function VentasView({
 
       setItems(
         (itemsRes.data ?? []).map((row) => {
-          const photos = (row as unknown as { item_photos: { url: string }[] }).item_photos;
+          const photos = (row as unknown as { item_photos: { url: string; thumb_url: string | null; md_url: string | null }[] }).item_photos;
           return {
             ...row,
             asking_price: row.asking_price == null ? null : Number(row.asking_price),
-            photoUrl: photos?.[0]?.url ?? null,
-            photoUrls: (photos ?? []).map((p) => p.url),
+            photoUrl: photos?.[0] ? thumbUrl(photos[0]) : null,
+            photoUrls: (photos ?? []).map(viewUrl),
           } as QueueItem;
         }),
       );

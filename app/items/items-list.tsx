@@ -9,10 +9,11 @@ import ItemChip from "@/components/ItemChip";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
 import { normalizeSearch } from "@/lib/normalize-search";
+import { thumbUrl } from "@/lib/photos";
 import type { Item, ItemListRow } from "@/lib/types";
 
 type ItemRowFromQuery = Item & {
-  item_photos: { url: string }[] | null;
+  item_photos: { url: string; thumb_url: string | null; md_url: string | null }[] | null;
 };
 
 export default function ItemsList() {
@@ -89,7 +90,7 @@ export default function ItemsList() {
           // suggested_resale_price/asking_price_override to null for
           // anyone who isn't Editor/Owner, at the query level.
           .from("items_public")
-          .select("*, item_photos(url)")
+          .select("*, item_photos(url, thumb_url, md_url)")
           .order("sort_order", { referencedTable: "item_photos" })
           .order("created_at", { ascending: false }),
         supabase.from("item_wishlist_counts").select("item_id, bidder_count"),
@@ -114,7 +115,7 @@ export default function ItemsList() {
           const { item_photos, ...item } = row;
           return {
             ...item,
-            primaryPhotoUrl: item_photos?.[0]?.url ?? null,
+            primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
             bidderCount: countByItemId.get(item.id) ?? 0,
           };
         }),

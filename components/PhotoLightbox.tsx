@@ -63,6 +63,7 @@ export default function PhotoLightbox({
       <img
         src={photos[index]}
         alt={alt}
+        decoding="async"
         onClick={(e) => e.stopPropagation()}
         className="max-h-[88dvh] max-w-full rounded object-contain"
       />

@@ -5,8 +5,9 @@ import { round2 } from "@/lib/sales/orders";
 import type { OrderStatus, PaymentMethod } from "@/lib/sales/types";
 
 export type QueueItem = Pick<Item, "id" | "name" | "brand" | "model" | "area" | "quantity" | "ref_code" | "status" | "asking_price"> & {
+  // The first photo's thumbnail, for list rows.
   photoUrl: string | null;
-  // Every photo, in order (photoUrl is the first), for the full-size viewer.
+  // Every photo's medium copy, in order, for the full-size viewer.
   photoUrls: string[];
 };
 
@@ -119,7 +120,7 @@ export function PhotoThumb({
         className={`${THUMB} cursor-zoom-in overflow-hidden bg-card`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={item.photoUrls[0]} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={item.photoUrl ?? item.photoUrls[0]} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
       </button>
     );
   }
@@ -139,7 +140,7 @@ export function PhotoPanel({ url, className = "w-14" }: { url: string | null; cl
     return (
       <span className={`${base} overflow-hidden bg-card`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <img src={url} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
       </span>
     );
   }

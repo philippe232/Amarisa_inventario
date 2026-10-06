@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
+import { thumbUrl } from "@/lib/photos";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
 import { rankCandidatesForItem } from "@/lib/gasto-matching/score.mjs";
@@ -96,7 +97,7 @@ export default function MatchComprasScreen() {
       const [itemsRes, candidatesRes, matchesRes] = await Promise.all([
         supabase
           .from("items")
-          .select("id, name, description, brand, model, area, type, quantity, ref_code, purchase_price, has_factura, factura_cfdi, item_photos(url)")
+          .select("id, name, description, brand, model, area, type, quantity, ref_code, purchase_price, has_factura, factura_cfdi, item_photos(url, thumb_url, md_url)")
           .order("sort_order", { referencedTable: "item_photos" })
           .order("name"),
         supabase
@@ -116,8 +117,8 @@ export default function MatchComprasScreen() {
 
       setItems(
         (itemsRes.data ?? []).map((row) => {
-          const photos = (row as unknown as { item_photos: { url: string }[] }).item_photos;
-          return { ...row, photoUrl: photos?.[0]?.url ?? null } as QueueItem;
+          const photos = (row as unknown as { item_photos: { url: string; thumb_url: string | null; md_url: string | null }[] }).item_photos;
+          return { ...row, photoUrl: photos?.[0] ? thumbUrl(photos[0]) : null } as QueueItem;
         }),
       );
 
@@ -534,7 +535,7 @@ function ItemDetailPanel({
       <div className="flex items-start gap-3">
         {item.photoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
+          <img src={item.photoUrl} alt="" decoding="async" className="h-16 w-16 shrink-0 rounded-md border border-line object-cover" />
         )}
         <div className="min-w-0 flex-1">
           <p className="font-bold text-ink">{getDisplayName(item)}</p>

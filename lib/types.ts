@@ -94,6 +94,9 @@ export type ItemPhoto = {
   id: string;
   item_id: string;
   url: string;
+  // Smaller copies (0044); null until made — see lib/photos.ts.
+  thumb_url: string | null;
+  md_url: string | null;
   sort_order: number;
   created_at: string;
 };

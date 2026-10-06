@@ -7,6 +7,7 @@ import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import ItemChip from "@/components/ItemChip";
+import { thumbUrl } from "@/lib/photos";
 import QuantityStepper from "@/components/QuantityStepper";
 import type { Item, ItemListRow } from "@/lib/types";
 
@@ -14,7 +15,7 @@ type WishlistRowFromQuery = {
   id: string;
   quantity: number;
   bid_amount: number | string | null;
-  items: (Item & { item_photos: { url: string }[] }) | null;
+  items: (Item & { item_photos: { url: string; thumb_url: string | null; md_url: string | null }[] }) | null;
 };
 
 type WishlistRowData = {
@@ -63,7 +64,7 @@ export default function WishlistList() {
       const [wishlistRes, countsRes] = await Promise.all([
         supabase
           .from("wishlist_items")
-          .select("id, quantity, bid_amount, items(*, item_photos(url))")
+          .select("id, quantity, bid_amount, items(*, item_photos(url, thumb_url, md_url))")
           .eq("user_id", userId)
           .order("created_at", { ascending: false }),
         supabase.from("item_wishlist_counts").select("item_id, bidder_count"),
@@ -102,7 +103,7 @@ export default function WishlistList() {
               bidAmount: row.bid_amount != null ? Number(row.bid_amount) : null,
               item: {
                 ...item,
-                primaryPhotoUrl: item_photos?.[0]?.url ?? null,
+                primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
                 bidderCount: countByItemId.get(item.id) ?? 0,
               },
             };

@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrencyWhole } from "@/lib/currency";
 import { normalizeSearch } from "@/lib/normalize-search";
+import { thumbUrl, viewUrl } from "@/lib/photos";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
 import PhotoLightbox from "@/components/PhotoLightbox";
@@ -56,7 +57,10 @@ type SortDir = "asc" | "desc";
 const AREA_ORDER = ["Cocina", "Piso", "Barra", "Panadería"];
 
 type Row = Item & {
+  // Medium copies for the full-size viewer; photoThumb is the first photo's
+  // thumbnail for the table cell.
   photoUrls: string[];
+  photoThumb: string | null;
   photoCount: number;
   linkCount: number;
   // From the active item_purchase_matches row (db/migrations/0023,
@@ -699,7 +703,7 @@ const COLUMNS: ColumnDef[] = [
             className="shrink-0 cursor-zoom-in rounded"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={i.photoUrls[0]} alt="" className="h-8 w-8 rounded border border-line object-cover" />
+            <img src={i.photoThumb ?? i.photoUrls[0]} alt="" loading="lazy" decoding="async" className="h-8 w-8 rounded border border-line object-cover" />
           </button>
         ) : (
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-page text-ink-faint">
@@ -855,7 +859,7 @@ export default function RevisionList() {
       // tiny enough that no per-item count view exists for it.
       const [itemsRes, photosRes, linksRes, matchesRes] = await Promise.all([
         supabase.from("items").select("*"),
-        supabase.from("item_photos").select("item_id, url").order("sort_order"),
+        supabase.from("item_photos").select("item_id, url, thumb_url, md_url").order("sort_order"),
         supabase.from("item_links").select("item_id"),
         supabase.from("item_purchase_matches").select("item_id, status").eq("is_active", true),
       ]);
@@ -869,10 +873,14 @@ export default function RevisionList() {
       }
 
       const photoUrls = new Map<string, string[]>();
+      const photoThumbs = new Map<string, string>();
       for (const row of photosRes.data ?? []) {
         const list = photoUrls.get(row.item_id);
-        if (list) list.push(row.url);
-        else photoUrls.set(row.item_id, [row.url]);
+        if (list) list.push(viewUrl(row));
+        else {
+          photoUrls.set(row.item_id, [viewUrl(row)]);
+          photoThumbs.set(row.item_id, thumbUrl(row));
+        }
       }
       const linkCounts = new Map<string, number>();
       for (const row of linksRes.data ?? []) {
@@ -886,6 +894,7 @@ export default function RevisionList() {
       const rows: Row[] = (itemsRes.data as Item[]).map((item) => ({
         ...item,
         photoUrls: photoUrls.get(item.id) ?? [],
+        photoThumb: photoThumbs.get(item.id) ?? null,
         photoCount: photoUrls.get(item.id)?.length ?? 0,
         linkCount: linkCounts.get(item.id) ?? 0,
         matchStatus: matchStatuses.get(item.id) ?? null,
