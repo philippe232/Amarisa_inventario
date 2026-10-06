@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { Client } from "pg";
+import pg from "pg";
 import sharp from "sharp";
 
 const BUCKET = "item-photos";
@@ -53,7 +53,9 @@ async function main() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const client = new Client({
+  // A pool, because the three workers run queries at the same time.
+  const client = new pg.Pool({
+    max: 4,
     host: process.env.PGHOST,
     port: Number(process.env.PGPORT || 5432),
     database: process.env.PGDATABASE,
@@ -61,7 +63,6 @@ async function main() {
     password: process.env.PGPASSWORD,
     ssl: { rejectUnauthorized: false },
   });
-  await client.connect();
   try {
     const { rows } = await client.query(
       `select p.id, p.item_id, p.url, p.thumb_url, p.md_url,
