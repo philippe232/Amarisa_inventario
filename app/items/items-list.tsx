@@ -187,6 +187,7 @@ export default function ItemsList() {
             primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
             bidderCount: countByItemId.get(item.id) ?? 0,
             othersInterested: Math.max(0, (countByItemId.get(item.id) ?? 0) - (ownItemIds.has(item.id) ? 1 : 0)),
+            onMyList: ownItemIds.has(item.id),
           };
         }),
       );

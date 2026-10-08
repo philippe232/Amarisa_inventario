@@ -129,6 +129,9 @@ export type ItemListRow = Item & {
   // viewer's own add) — what the "Ya ofertaron" badge goes by, so nobody
   // sees it lit up by their own click.
   othersInterested: number;
+  // The viewer has it on their own list (set on the catalog; the Mi lista
+  // screen leaves it off — every row there is theirs).
+  onMyList?: boolean;
 };
 
 export type WishlistItem = {

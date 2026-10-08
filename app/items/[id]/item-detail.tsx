@@ -12,6 +12,7 @@ import PhotoCarousel from "@/components/PhotoCarousel";
 import { useTopBar } from "@/components/TopBarContext";
 import QuantityStepper from "@/components/QuantityStepper";
 import InterestBadge from "@/components/InterestBadge";
+import MyOfferBadge from "@/components/MyOfferBadge";
 import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
 import PriorityBadge from "@/components/PriorityBadge";
@@ -245,6 +246,8 @@ export default function ItemDetail({ id }: { id: string }) {
             {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {availableUnits}</span>}
             <StatusBadge status={item.status} />
             {wanted && <InterestBadge />}
+            {/* Live: appears the moment they tap "Agregar a mi lista". */}
+            {!sold && wishlistRowId && <MyOfferBadge />}
             <TierBadge tier={tier} />
             {item.review_status && <ReviewStatusBadge status={item.review_status} />}
             {item.priority && <PriorityBadge priority={item.priority} />}
