@@ -1,4 +1,4 @@
-import type { Item } from "@/lib/types";
+import type { Item, ItemStatus } from "@/lib/types";
 
 // Shared by the list chip and the detail screen. Brand/model are entered
 // for matching purposes (see match-compras) and are often a placeholder
@@ -23,4 +23,16 @@ export function formatDimensions(item: Pick<Item, "height_cm" | "width_cm" | "le
     length_cm != null && `Largo ${length_cm} cm`,
   ].filter((s): s is string => Boolean(s));
   return labeled.length > 0 ? labeled.join(", ") : null;
+}
+
+// What the catalog treats an item's status as. "Sold" is a fact about the
+// sales (every unit is in a closed order), but items.status is also an
+// ordinary field — the Estado selects on the edit form and in Revisión can
+// set it back to "En venta" after the order closed, and then a sold article
+// kept showing up as available. So an item whose units are all sold counts
+// as sold whatever the field says; a hand-set "sold" is kept as is.
+// units_sold only exists on rows read through items_public.
+export function effectiveStatus(item: Pick<Item, "status" | "quantity" | "units_sold">): ItemStatus {
+  if (item.status === "sold") return "sold";
+  return item.quantity > 0 && (item.units_sold ?? 0) >= item.quantity ? "sold" : item.status;
 }

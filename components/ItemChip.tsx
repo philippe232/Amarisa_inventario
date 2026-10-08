@@ -50,7 +50,7 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
   const partlySold = !sold && unitsSold > 0;
 
   return (
-    <Row variant="line" href={href}>
+    <Row variant="line" href={href} className={reserved ? "-mx-3.5 bg-yellow/10 px-3.5" : ""}>
       <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} sold={sold} />
 
       <div className="min-w-0 flex-1">
@@ -74,11 +74,15 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
               <span className="truncate">{item.ref_code}</span>
             </span>
           )}
-          {reserved && <StatusBadge status="reserved" compact />}
         </div>
       </div>
 
       <div className="shrink-0 text-right">
+        {reserved && (
+          <div className="mb-1 flex justify-end">
+            <StatusBadge status="reserved" compact />
+          </div>
+        )}
         {sold ? (
           <span className="inline-flex items-center rounded-full border border-red-800/30 bg-red-800/10 px-2.5 py-0.5 text-xs font-bold text-red-800">
             Vendido

@@ -7,6 +7,7 @@ import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
 import ItemChip from "@/components/ItemChip";
+import { effectiveStatus } from "@/lib/items";
 import { thumbUrl } from "@/lib/photos";
 import QuantityStepper from "@/components/QuantityStepper";
 import type { Item, ItemListRow } from "@/lib/types";
@@ -103,6 +104,7 @@ export default function WishlistList() {
               bidAmount: row.bid_amount != null ? Number(row.bid_amount) : null,
               item: {
                 ...item,
+                status: effectiveStatus({ ...item, units_sold: soldById.get(item.id) }),
                 primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
                 bidderCount: countByItemId.get(item.id) ?? 0,
               },

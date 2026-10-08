@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ensureAnonymousSession } from "@/lib/supabase/anon-session";
 import { useSessionInfo } from "@/lib/auth";
 import { formatCurrency } from "@/lib/currency";
-import { formatDimensions, getDisplayName } from "@/lib/items";
+import { effectiveStatus, formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import { useTopBar } from "@/components/TopBarContext";
 import QuantityStepper from "@/components/QuantityStepper";
@@ -85,7 +85,8 @@ export default function ItemDetail({ id }: { id: string }) {
         setLoading(false);
         return;
       }
-      setItem(itemRes.data as Item);
+      const loaded = itemRes.data as Item;
+      setItem({ ...loaded, status: effectiveStatus(loaded) });
       setPhotos((photosRes.data ?? []) as ItemPhoto[]);
       setLinks((linksRes.data ?? []) as ItemLink[]);
       setError(null);

@@ -10,6 +10,7 @@ import ItemChip from "@/components/ItemChip";
 import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
 import { normalizeSearch } from "@/lib/normalize-search";
+import { effectiveStatus } from "@/lib/items";
 import { thumbUrl } from "@/lib/photos";
 import { getEffectiveTier, TIER_LABELS, type Tier } from "@/lib/tier";
 import type { Item, ItemListRow } from "@/lib/types";
@@ -161,6 +162,7 @@ export default function ItemsList() {
           const { item_photos, ...item } = row;
           return {
             ...item,
+            status: effectiveStatus(item),
             primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
             bidderCount: countByItemId.get(item.id) ?? 0,
           };
