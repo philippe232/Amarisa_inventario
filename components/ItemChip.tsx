@@ -2,6 +2,7 @@ import { Hash, ImageOff, Users } from "lucide-react";
 import Row from "@/components/Row";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
+import StatusBadge from "@/components/StatusBadge";
 import type { ItemListRow } from "@/lib/types";
 
 // Ported from reference/cereza/app/(shell)/gastos/gastos-list.tsx's inline
@@ -12,7 +13,7 @@ import type { ItemListRow } from "@/lib/types";
 function ItemPhoto({ url, alt, sold }: { url: string | null; alt: string; sold: boolean }) {
   if (url) {
     return (
-      <span className={`h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line bg-card ${sold ? "opacity-50" : ""}`}>
+      <span className={`h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line bg-card ${sold ? "opacity-50 grayscale" : ""}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={url} alt={alt} loading="lazy" decoding="async" className="h-full w-full object-cover" />
       </span>
@@ -38,9 +39,11 @@ function bidderLabel(count: number): string {
 export default function ItemChip({ item, href }: { item: ItemListRow; href?: string }) {
   const displayName = getDisplayName(item);
   // Every unit sold (set when the order that sells the last one is
-  // closed in /ventas): the row is crossed out and says "Vendido" where
-  // the price was.
+  // closed in /ventas): the row is greyed out and crossed out, the
+  // "Vendido" badge takes the price's place, and the interesados count is
+  // hidden — there's nothing left to be interested in.
   const sold = item.status === "sold";
+  const reserved = item.status === "reserved";
   // Some units gone but not all: the item stays for sale, with the
   // count in dark red under the price.
   const unitsSold = item.units_sold ?? 0;
@@ -51,30 +54,35 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
       <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} sold={sold} />
 
       <div className="min-w-0 flex-1">
-        <p className={`truncate text-[15px] font-bold ${sold ? "text-red-800 line-through" : "text-ink"}`}>{displayName}</p>
+        <p className={`truncate text-[15px] font-bold ${sold ? "text-ink-faint line-through" : "text-ink"}`}>{displayName}</p>
         <div className={`mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-soft ${sold ? "opacity-60" : ""}`}>
-          <span className="flex items-center gap-1" aria-label={bidderLabel(item.bidderCount)}>
-            <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span
-              aria-hidden="true"
-              className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-soft/15 px-1 text-[11px] font-bold tabular-nums"
-            >
-              {item.bidderCount}
+          {!sold && (
+            <span className="flex items-center gap-1" aria-label={bidderLabel(item.bidderCount)}>
+              <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-soft/15 px-1 text-[11px] font-bold tabular-nums"
+              >
+                {item.bidderCount}
+              </span>
             </span>
-          </span>
+          )}
           {item.ref_code && (
             <span className="flex min-w-0 items-center gap-1 truncate">
-              <span aria-hidden="true">·</span>
+              {!sold && <span aria-hidden="true">·</span>}
               <Hash className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{item.ref_code}</span>
             </span>
           )}
+          {reserved && <StatusBadge status="reserved" compact />}
         </div>
       </div>
 
       <div className="shrink-0 text-right">
         {sold ? (
-          <p className="text-[16px] font-bold text-red-800">Vendido</p>
+          <span className="inline-flex items-center rounded-full border border-red-800/30 bg-red-800/10 px-2.5 py-0.5 text-xs font-bold text-red-800">
+            Vendido
+          </span>
         ) : (
           <p className="text-[16px] font-bold text-ink [font-variant-numeric:tabular-nums]">
             {item.asking_price != null ? formatCurrency(item.asking_price) : "—"}

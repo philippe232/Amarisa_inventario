@@ -185,10 +185,15 @@ function WishlistRow({
   }
 
   const availableUnits = Math.max(0, row.item.quantity - row.unitsSold);
+  // A sold article stays on the list (with its "Vendido" badge, from
+  // ItemChip) so it doesn't just vanish, but nothing can be asked of it any
+  // more — no quantity, no bid. Removing it is still allowed.
+  const isSold = row.item.status === "sold";
   // With several units the offer is per piece, so say so.
   const perPiece = row.item.quantity > 1;
 
   async function handleQuantity(next: number) {
+    if (isSold) return;
     setRowError(null);
     const { error } = await supabase.from("wishlist_items").update({ quantity: next }).eq("id", row.wishlistId);
     if (error) {
@@ -199,6 +204,7 @@ function WishlistRow({
   }
 
   async function handleSaveBid() {
+    if (isSold) return;
     const amount = Number(bidInput);
     if (!Number.isFinite(amount) || amount < 0) {
       setRowError("Ingresa un monto válido.");
@@ -221,7 +227,7 @@ function WishlistRow({
     <div className="border-b border-line py-2.5 last:border-b-0">
       <ItemChip item={row.item} />
 
-      {availableUnits > 1 && (
+      {!isSold && availableUnits > 1 && (
         <div className="mt-1.5 flex items-center justify-between gap-3 px-1">
           <p className="text-[13px] text-ink-soft">
             Cantidad <span className="text-ink-faint">(hasta {availableUnits})</span>
@@ -229,7 +235,7 @@ function WishlistRow({
           <QuantityStepper value={Math.min(row.quantity, availableUnits)} max={availableUnits} onChange={handleQuantity} />
         </div>
       )}
-      {row.quantity > availableUnits && availableUnits >= 0 && (
+      {!isSold && row.quantity > availableUnits && availableUnits >= 0 && (
         <p className="mt-1 px-1 text-xs text-red-800">
           {availableUnits === 0 ? "Ya no quedan unidades." : `Solo quedan ${availableUnits}.`}
         </p>
@@ -239,13 +245,16 @@ function WishlistRow({
         <p className="text-[13px] text-ink-soft">
           {row.bidAmount != null
             ? `${perPiece ? "Tu oferta por pieza" : "Tu oferta"}: ${formatCurrency(row.bidAmount)}`
-            : "Sin oferta todavía"}
+            : isSold
+              ? "Ya no se puede ofertar"
+              : "Sin oferta todavía"}
         </p>
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
             onClick={() => setBidding((v) => !v)}
-            className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-xs font-medium text-ink"
+            disabled={isSold}
+            className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-40"
           >
             {row.bidAmount != null ? "Editar oferta" : "Ofertar"}
           </button>
@@ -260,7 +269,7 @@ function WishlistRow({
         </div>
       </div>
 
-      {bidding && (
+      {bidding && !isSold && (
         <div className="mt-2 flex items-center gap-2 px-1">
           <input
             type="number"

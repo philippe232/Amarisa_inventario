@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import ItemsList from "./items-list";
 
 // ItemsList is entirely client-fetched (Supabase, no session data at
@@ -10,7 +11,10 @@ export const dynamic = "force-dynamic";
 export default function ItemsPage() {
   return (
     <div className="min-h-screen bg-white">
-      <ItemsList />
+      {/* ItemsList reads ?vista= (Disponibles / Vendidos) from the URL. */}
+      <Suspense>
+        <ItemsList />
+      </Suspense>
     </div>
   );
 }

@@ -15,7 +15,17 @@ import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
 import PriorityBadge from "@/components/PriorityBadge";
 import ReviewStatusBadge from "@/components/ReviewStatusBadge";
+import TierBadge from "@/components/TierBadge";
+import { BIG_TICKET_THRESHOLD, TIER_LABELS, getEffectiveTier, type TierOverride } from "@/lib/tier";
 import type { Item, ItemLink, ItemPhoto } from "@/lib/types";
+
+// Editor/Owner's choice for the tier: null is "Automático" (derived from
+// the price), the other two pin it.
+const TIER_CHOICES: { value: TierOverride | null; label: string }[] = [
+  { value: null, label: "Automático" },
+  { value: "equipo", label: TIER_LABELS.equipo },
+  { value: "gangas", label: TIER_LABELS.gangas },
+];
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   if (value == null || value === "") return null;
@@ -45,6 +55,8 @@ export default function ItemDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const [openingFactura, setOpeningFactura] = useState(false);
+  const [tierBusy, setTierBusy] = useState(false);
+  const [tierError, setTierError] = useState<string | null>(null);
 
   const [wishlistRowId, setWishlistRowId] = useState<string | null>(null);
   // How many units the buyer wants of this article (saved on the list row).
@@ -119,6 +131,24 @@ export default function ItemDetail({ id }: { id: string }) {
     if (data) window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  // Editor/Owner only (the control isn't rendered for anyone else, and RLS
+  // — "admins can update items", 0004 — refuses the write regardless). RLS
+  // refusing an update doesn't raise an error, it just updates 0 rows, so
+  // an empty result is treated as a failure too.
+  async function handleTierChange(next: TierOverride | null) {
+    if (!item || tierBusy || next === item.tier_override) return;
+    const previous = item.tier_override;
+    setTierBusy(true);
+    setTierError(null);
+    setItem((prev) => (prev ? { ...prev, tier_override: next } : prev));
+    const { data, error } = await supabase.from("items").update({ tier_override: next }).eq("id", id).select("id");
+    if (error || !data || data.length === 0) {
+      setItem((prev) => (prev ? { ...prev, tier_override: previous } : prev));
+      setTierError(error?.message ?? "No se pudo guardar la categoría.");
+    }
+    setTierBusy(false);
+  }
+
   // Changing the quantity of an article already on the list saves it
   // straight away; before it's added it just sets what will be added.
   async function handleWishlistQty(next: number) {
@@ -178,6 +208,10 @@ export default function ItemDetail({ id }: { id: string }) {
   const displayName = getDisplayName(item);
   // Units a buyer can still ask for: what hasn't been sold yet.
   const availableUnits = Math.max(0, item.quantity - (item.units_sold ?? 0));
+  // Sold articles are read-only for buyers: no adding to the list, no
+  // quantity, no bid. One already on someone's list can still be removed.
+  const sold = item.status === "sold";
+  const tier = getEffectiveTier(item);
 
   return (
     <div className="pb-8">
@@ -194,6 +228,7 @@ export default function ItemDetail({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-2 pt-1.5">
             {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {availableUnits}</span>}
             <StatusBadge status={item.status} />
+            <TierBadge tier={tier} />
             {item.review_status && <ReviewStatusBadge status={item.review_status} />}
             {item.priority && <PriorityBadge priority={item.priority} />}
           </div>
@@ -210,6 +245,40 @@ export default function ItemDetail({ id }: { id: string }) {
         {/* Same masking as the badges above — internal_notes is never
             populated for a non-admin session. */}
         {item.internal_notes && <p className="mt-1.5 text-sm whitespace-pre-wrap text-ink-soft">{item.internal_notes}</p>}
+
+        {/* Editor/Owner: pin the tier, or leave it on Automático (derived
+            from the price). Buyers only see the tag above. */}
+        {role && (
+          <div className="mt-3">
+            <p className="text-xs font-bold tracking-wide text-ink-soft uppercase">Categoría</p>
+            <div role="group" aria-label="Categoría" className="mt-1.5 flex flex-wrap gap-2">
+              {TIER_CHOICES.map((choice) => {
+                const active = item.tier_override === choice.value;
+                return (
+                  <button
+                    key={choice.label}
+                    type="button"
+                    onClick={() => handleTierChange(choice.value)}
+                    disabled={tierBusy}
+                    aria-pressed={active}
+                    className={`h-9 rounded-full border px-3 text-[13px] font-medium disabled:opacity-50 ${
+                      active ? "border-ink bg-ink text-white" : "border-line-strong bg-card text-ink"
+                    }`}
+                  >
+                    {choice.label}
+                  </button>
+                );
+              })}
+            </div>
+            {item.tier_override === null && (
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Automático: más de {formatCurrency(BIG_TICKET_THRESHOLD)} es {TIER_LABELS.equipo}; hasta {formatCurrency(BIG_TICKET_THRESHOLD)} o sin
+                precio es {TIER_LABELS.gangas}.
+              </p>
+            )}
+            {tierError && <p className="mt-1.5 text-xs text-red-600">{tierError}</p>}
+          </div>
+        )}
       </div>
 
       {/* 2. Pricing */}
@@ -312,7 +381,8 @@ export default function ItemDetail({ id }: { id: string }) {
           Viewer/Bidder; role !== null (Editor/Owner) still sees it too,
           nothing about being an admin excludes them from wishlisting. */}
       <div className="mt-6 px-3.5">
-        {availableUnits > 1 && (
+        {sold && <p className="mb-3 text-sm text-ink-soft">Este artículo ya se vendió.</p>}
+        {!sold && availableUnits > 1 && (
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-sm text-ink">
               Cantidad <span className="text-ink-soft">(hasta {availableUnits})</span>
@@ -320,20 +390,22 @@ export default function ItemDetail({ id }: { id: string }) {
             <QuantityStepper value={Math.min(wishlistQty, availableUnits)} max={availableUnits} onChange={handleWishlistQty} />
           </div>
         )}
-        <button
-          type="button"
-          onClick={handleToggleWishlist}
-          disabled={wishlistBusy}
-          className={`flex h-12 w-full items-center justify-center rounded-md text-sm font-semibold disabled:opacity-50 ${
-            wishlistRowId ? "border border-line-strong bg-card text-ink" : "bg-ink text-white"
-          }`}
-        >
-          {wishlistBusy
-            ? "Actualizando..."
-            : wishlistRowId
-              ? "Quitar de mi lista"
-              : "Agregar a mi lista"}
-        </button>
+        {(!sold || wishlistRowId) && (
+          <button
+            type="button"
+            onClick={handleToggleWishlist}
+            disabled={wishlistBusy}
+            className={`flex h-12 w-full items-center justify-center rounded-md text-sm font-semibold disabled:opacity-50 ${
+              wishlistRowId ? "border border-line-strong bg-card text-ink" : "bg-ink text-white"
+            }`}
+          >
+            {wishlistBusy
+              ? "Actualizando..."
+              : wishlistRowId
+                ? "Quitar de mi lista"
+                : "Agregar a mi lista"}
+          </button>
+        )}
         {wishlistError && <p className="mt-2 text-sm text-red-600">{wishlistError}</p>}
       </div>
     </div>

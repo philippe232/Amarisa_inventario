@@ -2,6 +2,8 @@
 // wishlist_items) — keep in sync by hand, there's no generated-types
 // step in this project yet.
 
+import type { TierOverride } from "@/lib/tier";
+
 export type ItemStatus = "for_sale" | "reserved" | "sold";
 
 // Short 4-point scale (db/migrations/0006, rescaled by 0007) — replaces
@@ -83,6 +85,10 @@ export type Item = {
   // physical condition (condition_notes) or repair history
   // (maintenance_notes). Same masking as priority/review_status.
   internal_notes: string | null;
+  // Manual tier choice (db/migrations/0045); null = automatic, derived
+  // from the price by getEffectiveTier (lib/tier.ts). Public, unlike the
+  // internal columns above.
+  tier_override: TierOverride | null;
   created_at: string;
   updated_at: string;
   // Only on rows read through items_public (0036): units sold so far,

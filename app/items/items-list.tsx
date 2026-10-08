@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useSessionInfo } from "@/lib/auth";
 import ItemChip from "@/components/ItemChip";
@@ -10,17 +11,62 @@ import SearchFilterBar, { type FilterChip } from "@/components/SearchFilterBar";
 import Pill from "@/components/Pill";
 import { normalizeSearch } from "@/lib/normalize-search";
 import { thumbUrl } from "@/lib/photos";
+import { getEffectiveTier, TIER_LABELS, type Tier } from "@/lib/tier";
 import type { Item, ItemListRow } from "@/lib/types";
 
 type ItemRowFromQuery = Item & {
   item_photos: { url: string; thumb_url: string | null; md_url: string | null }[] | null;
 };
 
+type TierPill = "todo" | Tier;
+
+const TIER_PILLS: { value: TierPill; label: string }[] = [
+  { value: "todo", label: "Todo" },
+  { value: "equipo", label: TIER_LABELS.equipo },
+  { value: "gangas", label: TIER_LABELS.gangas },
+];
+
+// Compact on purpose (the shared Pill is 48px tall): three of these and the
+// "Ver vendidos" link have to share one row on a phone.
+function TierPillButton({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      className={`h-9 shrink-0 rounded-full border px-2.5 text-[13px] font-medium ${
+        active ? "border-ink bg-ink text-white" : "border-line-strong bg-card text-ink"
+      } ${disabled ? "opacity-50" : ""}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function ItemsList() {
   const supabase = createClient();
   const router = useRouter();
   const { role } = useSessionInfo();
   const [creating, setCreating] = useState(false);
+
+  // Disponibles vs Vendidos lives in the URL (?vista=vendidos) rather than
+  // in state, so opening a sold article and coming back lands on the same
+  // view instead of dropping to Disponibles.
+  const viewingSold = useSearchParams().get("vista") === "vendidos";
+  // Which tier pill is selected. Only narrows the default list: a search
+  // ignores it (see filteredItems).
+  const [tierPill, setTierPill] = useState<TierPill>("todo");
 
   const [items, setItems] = useState<ItemListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,20 +176,34 @@ export default function ItemsList() {
     };
   }, [supabase]);
 
+  // The main list is for_sale + reserved; sold articles only show in the
+  // Vendidos view. Everything below (search, área/tipo, price sort) works
+  // inside whichever of the two is on screen.
+  const viewItems = useMemo(
+    () => items.filter((i) => (viewingSold ? i.status === "sold" : i.status !== "sold")),
+    [items, viewingSold],
+  );
   const areaOptions = useMemo(
-    () => Array.from(new Set(items.map((i) => i.area).filter((a): a is string => !!a))).sort(),
-    [items],
+    () => Array.from(new Set(viewItems.map((i) => i.area).filter((a): a is string => !!a))).sort(),
+    [viewItems],
   );
   const typeOptions = useMemo(
-    () => Array.from(new Set(items.map((i) => i.type).filter((t): t is string => !!t))).sort(),
-    [items],
+    () => Array.from(new Set(viewItems.map((i) => i.type).filter((t): t is string => !!t))).sort(),
+    [viewItems],
   );
+  const searching = search.trim() !== "";
 
   // Client-side filter, no database round-trip — the whole catalog is
   // ~55 rows, same reasoning cuentas-por-pagar-list.tsx gives for its
   // own client-side search.
   const filteredItems = useMemo(() => {
-    let result = items;
+    let result = viewItems;
+    // The pills are only the default filter: while a search is active it
+    // looks across both tiers, so a typed ref# or name is never hidden by
+    // the pill that happens to be selected. (No pills in Vendidos.)
+    if (!viewingSold && !searching && tierPill !== "todo") {
+      result = result.filter((i) => getEffectiveTier(i) === tierPill);
+    }
     if (search.trim()) {
       const term = normalizeSearch(search.trim());
       result = result.filter(
@@ -166,7 +226,7 @@ export default function ItemsList() {
       });
     }
     return result;
-  }, [items, search, areaFiltro, typeFiltro, priceSort]);
+  }, [viewItems, viewingSold, searching, tierPill, search, areaFiltro, typeFiltro, priceSort]);
 
   const chips: FilterChip[] = [
     ...Array.from(areaFiltro).map((a) => ({ id: `area:${a}`, label: a })),
@@ -271,12 +331,55 @@ export default function ItemsList() {
         }
       />
 
+      {/* Hidden while loading so the first paint never shows a view the
+          URL may not agree with. */}
+      {!loading && !error && (
+        <div className="px-3.5 pt-3">
+          {viewingSold ? (
+            <div className="flex items-center justify-between gap-3">
+              <Link href="/items" className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Volver a disponibles
+              </Link>
+              <p className="text-sm text-ink-soft">Vendidos</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <div role="group" aria-label="Categoría" className="flex items-center gap-1.5">
+                  {TIER_PILLS.map((pill) => (
+                    <TierPillButton
+                      key={pill.value}
+                      // While searching, "Todo" is what is really applied.
+                      active={(searching ? "todo" : tierPill) === pill.value}
+                      disabled={searching}
+                      onClick={() => setTierPill(pill.value)}
+                    >
+                      {pill.label}
+                    </TierPillButton>
+                  ))}
+                </div>
+                <Link
+                  href="/items?vista=vendidos"
+                  className="ml-auto flex h-9 items-center text-[13px] font-medium text-ink-soft underline underline-offset-2"
+                >
+                  Ver vendidos
+                </Link>
+              </div>
+              {searching && <p className="mt-1.5 text-xs text-ink-soft">La búsqueda incluye todas las categorías.</p>}
+            </>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <p className="p-4 text-sm text-ink-soft">Cargando...</p>
       ) : error ? (
         <p className="p-4 text-sm text-red-600">Error: {error}</p>
       ) : items.length === 0 ? (
         <p className="p-4 text-sm text-ink-soft">Sin artículos.</p>
+      ) : viewItems.length === 0 ? (
+        <p className="p-4 text-sm text-ink-soft">{viewingSold ? "Todavía no hay artículos vendidos." : "No hay artículos disponibles."}</p>
       ) : filteredItems.length === 0 ? (
         <p className="p-4 text-sm text-ink-soft">Sin resultados.</p>
       ) : (
