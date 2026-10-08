@@ -65,9 +65,9 @@ export default function ItemsList() {
   // in state, so opening a sold article and coming back lands on the same
   // view instead of dropping to Disponibles.
   const viewingSold = useSearchParams().get("vista") === "vendidos";
-  // Which tier pill is selected. Only narrows the default list: a search
-  // ignores it (see filteredItems).
-  const [tierPill, setTierPill] = useState<TierPill>("todo");
+  // Which tier pill is selected: the list opens on Equipo y muebles. Only
+  // narrows the default list: a search ignores it (see filteredItems).
+  const [tierPill, setTierPill] = useState<TierPill>("equipo");
 
   const [items, setItems] = useState<ItemListRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,11 +83,16 @@ export default function ItemsList() {
   const [typeFiltro, setTypeFiltro] = useState<Set<string>>(new Set());
   // Single-select, not a Set like área/tipo — asc and desc are mutually
   // exclusive, and clicking the active one again clears it back to the
-  // default (newest-first) order.
+  // default. priceSort is only what was picked by hand (null = nothing
+  // picked); activePriceSort is what's actually applied.
   const [priceSort, setPriceSort] = useState<"asc" | "desc" | null>(null);
+  // Disponibles opens from most to least expensive. Vendidos shows no
+  // prices, so it keeps the newest-first order.
+  const defaultPriceSort: "asc" | "desc" | null = viewingSold ? null : "desc";
+  const activePriceSort = priceSort ?? defaultPriceSort;
 
   function togglePriceSort(value: "asc" | "desc") {
-    setPriceSort((prev) => (prev === value ? null : value));
+    setPriceSort(activePriceSort === value ? null : value);
   }
 
   function toggleArea(area: string) {
@@ -217,23 +222,26 @@ export default function ItemsList() {
     }
     if (areaFiltro.size > 0) result = result.filter((i) => i.area && areaFiltro.has(i.area));
     if (typeFiltro.size > 0) result = result.filter((i) => i.type && typeFiltro.has(i.type));
-    if (priceSort) {
+    if (activePriceSort) {
       // Items with no price at all aren't "cheapest" or "priciest" —
       // push them to the end regardless of direction rather than let a
       // missing price masquerade as $0.
       result = [...result].sort((a, b) => {
         if (a.asking_price == null) return b.asking_price == null ? 0 : 1;
         if (b.asking_price == null) return -1;
-        return priceSort === "asc" ? a.asking_price - b.asking_price : b.asking_price - a.asking_price;
+        return activePriceSort === "asc" ? a.asking_price - b.asking_price : b.asking_price - a.asking_price;
       });
     }
     return result;
-  }, [viewItems, viewingSold, searching, tierPill, search, areaFiltro, typeFiltro, priceSort]);
+  }, [viewItems, viewingSold, searching, tierPill, search, areaFiltro, typeFiltro, activePriceSort]);
 
   const chips: FilterChip[] = [
     ...Array.from(areaFiltro).map((a) => ({ id: `area:${a}`, label: a })),
     ...Array.from(typeFiltro).map((t) => ({ id: `type:${t}`, label: t })),
-    ...(priceSort ? [{ id: `price:${priceSort}`, label: priceSort === "asc" ? "Precio: menor a mayor" : "Precio: mayor a menor" }] : []),
+    // The default order isn't a filter, so it gets no chip.
+    ...(activePriceSort && activePriceSort !== defaultPriceSort
+      ? [{ id: `price:${activePriceSort}`, label: activePriceSort === "asc" ? "Precio: menor a mayor" : "Precio: mayor a menor" }]
+      : []),
   ];
 
   function handleRemoveChip(id: string) {
@@ -245,7 +253,7 @@ export default function ItemsList() {
     else if (kind === "price") setPriceSort(null);
   }
 
-  const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0 || priceSort !== null;
+  const hasActiveFilters = search !== "" || areaFiltro.size > 0 || typeFiltro.size > 0 || activePriceSort !== defaultPriceSort;
 
   // Insert a minimal placeholder row, then hand off to the real edit
   // screen for everything else — reuses that form entirely instead of
@@ -295,10 +303,10 @@ export default function ItemsList() {
             <div>
               <span className="mb-1.5 block text-xs font-bold tracking-wide text-ink-soft uppercase">Ordenar por precio</span>
               <div className="flex flex-wrap gap-2">
-                <Pill active={priceSort === "asc"} onClick={() => togglePriceSort("asc")}>
+                <Pill active={activePriceSort === "asc"} onClick={() => togglePriceSort("asc")}>
                   Menor a mayor
                 </Pill>
-                <Pill active={priceSort === "desc"} onClick={() => togglePriceSort("desc")}>
+                <Pill active={activePriceSort === "desc"} onClick={() => togglePriceSort("desc")}>
                   Mayor a menor
                 </Pill>
               </div>
