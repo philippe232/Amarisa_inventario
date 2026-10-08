@@ -125,6 +125,10 @@ export type ItemListRow = Item & {
   // the public-facing count has to come from a view that aggregates
   // across everyone instead of an embedded per-row count.
   bidderCount: number;
+  // How many OTHER people have it on their list (bidderCount without the
+  // viewer's own add) — what the "Ya ofertaron" badge goes by, so nobody
+  // sees it lit up by their own click.
+  othersInterested: number;
 };
 
 export type WishlistItem = {

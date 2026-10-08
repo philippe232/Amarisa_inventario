@@ -107,6 +107,8 @@ export default function WishlistList() {
                 status: effectiveStatus({ ...item, units_sold: soldById.get(item.id) }),
                 primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
                 bidderCount: countByItemId.get(item.id) ?? 0,
+                // This row is the viewer's own add, so the others are the rest.
+                othersInterested: Math.max(0, (countByItemId.get(item.id) ?? 0) - 1),
               },
             };
           }),

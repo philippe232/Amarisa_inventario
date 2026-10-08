@@ -136,7 +136,7 @@ export default function ItemsList() {
       // query, not an embedded wishlist_items(count)) — 0003 locked
       // wishlist_items itself down to each user's own rows, so a public
       // per-item count has to come from the aggregate view instead.
-      const [itemsRes, countsRes] = await Promise.all([
+      const [itemsRes, countsRes, ownItemIds] = await Promise.all([
         supabase
           // items_public (db/migrations/0006), not items — masks
           // suggested_resale_price/asking_price_override to null for
@@ -146,6 +146,22 @@ export default function ItemsList() {
           .order("sort_order", { referencedTable: "item_photos" })
           .order("created_at", { ascending: false }),
         supabase.from("item_wishlist_counts").select("item_id, bidder_count"),
+        // The visitor's own list, so their own add doesn't count as "other
+        // people" for the Ya ofertaron badge. No session yet (never added
+        // anything) means nothing to look up — and no reason to create an
+        // anonymous session just to browse. RLS returns only their own rows.
+        (async () => {
+          try {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (!session) return new Set<string>();
+            const { data } = await supabase.from("wishlist_items").select("item_id");
+            return new Set((data ?? []).map((r) => r.item_id as string));
+          } catch {
+            return new Set<string>();
+          }
+        })(),
       ]);
 
       if (cancelled) return;
@@ -170,6 +186,7 @@ export default function ItemsList() {
             status: effectiveStatus(item),
             primaryPhotoUrl: item_photos?.[0] ? thumbUrl(item_photos[0]) : null,
             bidderCount: countByItemId.get(item.id) ?? 0,
+            othersInterested: Math.max(0, (countByItemId.get(item.id) ?? 0) - (ownItemIds.has(item.id) ? 1 : 0)),
           };
         }),
       );

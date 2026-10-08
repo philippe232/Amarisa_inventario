@@ -2,7 +2,7 @@ import { Hash, ImageOff, Users } from "lucide-react";
 import Row from "@/components/Row";
 import { formatCurrency } from "@/lib/currency";
 import { getDisplayName } from "@/lib/items";
-import StatusBadge from "@/components/StatusBadge";
+import InterestBadge from "@/components/InterestBadge";
 import type { ItemListRow } from "@/lib/types";
 
 // Ported from reference/cereza/app/(shell)/gastos/gastos-list.tsx's inline
@@ -43,14 +43,16 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
   // "Vendido" badge takes the price's place, and the interesados count is
   // hidden — there's nothing left to be interested in.
   const sold = item.status === "sold";
-  const reserved = item.status === "reserved";
+  // Other people have it on their list (and it's still for sale): the gold
+  // "Ya ofertaron" badge by the price and a light tint on the row.
+  const wanted = !sold && item.othersInterested > 0;
   // Some units gone but not all: the item stays for sale, with the
   // count in dark red under the price.
   const unitsSold = item.units_sold ?? 0;
   const partlySold = !sold && unitsSold > 0;
 
   return (
-    <Row variant="line" href={href} className={reserved ? "-mx-3.5 bg-yellow/10 px-3.5" : ""}>
+    <Row variant="line" href={href} className={wanted ? "-mx-3.5 bg-yellow/10 px-3.5" : ""}>
       <ItemPhoto url={item.primaryPhotoUrl} alt={displayName} sold={sold} />
 
       <div className="min-w-0 flex-1">
@@ -78,9 +80,9 @@ export default function ItemChip({ item, href }: { item: ItemListRow; href?: str
       </div>
 
       <div className="shrink-0 text-right">
-        {reserved && (
+        {wanted && (
           <div className="mb-1 flex justify-end">
-            <StatusBadge status="reserved" compact />
+            <InterestBadge compact />
           </div>
         )}
         {sold ? (

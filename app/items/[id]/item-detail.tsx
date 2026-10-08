@@ -11,6 +11,7 @@ import { effectiveStatus, formatDimensions, getDisplayName } from "@/lib/items";
 import PhotoCarousel from "@/components/PhotoCarousel";
 import { useTopBar } from "@/components/TopBarContext";
 import QuantityStepper from "@/components/QuantityStepper";
+import InterestBadge from "@/components/InterestBadge";
 import StatusBadge from "@/components/StatusBadge";
 import ConditionBadge from "@/components/ConditionBadge";
 import PriorityBadge from "@/components/PriorityBadge";
@@ -59,6 +60,14 @@ export default function ItemDetail({ id }: { id: string }) {
   const [tierError, setTierError] = useState<string | null>(null);
 
   const [wishlistRowId, setWishlistRowId] = useState<string | null>(null);
+  // How many lists the article was on when the page loaded, and whether
+  // one of them was the viewer's own — the "Ya ofertaron" badge counts only
+  // other people, and shouldn't flicker as they add/remove it themselves.
+  const [listCount, setListCount] = useState(0);
+  const [ownListAtLoad, setOwnListAtLoad] = useState(false);
+  // The badge waits for the membership check below, or it would flash on
+  // for a viewer whose own add is the only one.
+  const [listChecked, setListChecked] = useState(false);
   // How many units the buyer wants of this article (saved on the list row).
   const [wishlistQty, setWishlistQty] = useState(1);
   const [wishlistBusy, setWishlistBusy] = useState(false);
@@ -69,7 +78,7 @@ export default function ItemDetail({ id }: { id: string }) {
 
     async function load() {
       setLoading(true);
-      const [itemRes, photosRes, linksRes] = await Promise.all([
+      const [itemRes, photosRes, linksRes, countRes] = await Promise.all([
         // items_public (db/migrations/0006), not items directly — it
         // masks suggested_resale_price/asking_price_override to null
         // for anyone who isn't Editor/Owner, at the query level, not
@@ -77,6 +86,7 @@ export default function ItemDetail({ id }: { id: string }) {
         supabase.from("items_public").select("*").eq("id", id).single(),
         supabase.from("item_photos").select("*").eq("item_id", id).order("sort_order"),
         supabase.from("item_links").select("*").eq("item_id", id).order("created_at"),
+        supabase.from("item_wishlist_counts").select("bidder_count").eq("item_id", id).maybeSingle(),
       ]);
       if (cancelled) return;
 
@@ -89,6 +99,7 @@ export default function ItemDetail({ id }: { id: string }) {
       setItem({ ...loaded, status: effectiveStatus(loaded) });
       setPhotos((photosRes.data ?? []) as ItemPhoto[]);
       setLinks((linksRes.data ?? []) as ItemLink[]);
+      setListCount((countRes.data?.bidder_count as number | undefined) ?? 0);
       setError(null);
       setLoading(false);
 
@@ -106,12 +117,15 @@ export default function ItemDetail({ id }: { id: string }) {
           .maybeSingle();
         if (!cancelled) {
           setWishlistRowId(data?.id ?? null);
+          setOwnListAtLoad(Boolean(data?.id));
           if (data?.quantity) setWishlistQty(data.quantity);
+          setListChecked(true);
         }
       } catch {
         // Leave the button in its default "add" state — same graceful
         // degradation as the rest of the app when anonymous auth isn't
         // reachable.
+        if (!cancelled) setListChecked(true);
       }
     }
 
@@ -213,6 +227,7 @@ export default function ItemDetail({ id }: { id: string }) {
   // quantity, no bid. One already on someone's list can still be removed.
   const sold = item.status === "sold";
   const tier = getEffectiveTier(item);
+  const wanted = !sold && listChecked && listCount - (ownListAtLoad ? 1 : 0) > 0;
 
   return (
     <div className="pb-8">
@@ -229,6 +244,7 @@ export default function ItemDetail({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-2 pt-1.5">
             {item.quantity > 1 && <span className="text-sm text-ink-soft">Cantidad disponible: {availableUnits}</span>}
             <StatusBadge status={item.status} />
+            {wanted && <InterestBadge />}
             <TierBadge tier={tier} />
             {item.review_status && <ReviewStatusBadge status={item.review_status} />}
             {item.priority && <PriorityBadge priority={item.priority} />}
